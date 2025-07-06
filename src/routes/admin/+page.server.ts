@@ -4,7 +4,6 @@ import {
 	ADMIN_PASSWORD,
 	DEEPGRAM_API_KEY,
 	DEEPL_API_KEY,
-	GROQ_API_KEY,
 	GEMINI_API_KEY,
 	VERCEL_TOKEN,
 	VERCEL_PROJECT_ID,
@@ -33,7 +32,6 @@ export const load: PageServerLoad = ({ cookies }) => {
 		apiKeys: {
 			deepgram: maskKey(DEEPGRAM_API_KEY),
 			deepl: maskKey(DEEPL_API_KEY),
-			groq: maskKey(GROQ_API_KEY),
 			gemini: maskKey(GEMINI_API_KEY)
 		}
 	};
@@ -74,7 +72,6 @@ export const actions: Actions = {
 		const keysToUpdate = [
 			{ name: 'DEEPGRAM_API_KEY', value: data.get('deepgram_api_key') as string },
 			{ name: 'DEEPL_API_KEY', value: data.get('deepl_api_key') as string },
-			{ name: 'GROQ_API_KEY', value: data.get('groq_api_key') as string },
 			{ name: 'GEMINI_API_KEY', value: data.get('gemini_api_key') as string }
 		].filter((key) => key.value);
 

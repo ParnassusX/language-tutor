@@ -43,11 +43,6 @@
 				<p class="current-key">Current: {data.apiKeys?.deepl}</p>
 			</div>
 			<div class="form-group">
-				<label for="groq_api_key">Groq API Key:</label>
-				<input type="text" id="groq_api_key" name="groq_api_key" placeholder="gsk_..." />
-				<p class="current-key">Current: {data.apiKeys?.groq}</p>
-			</div>
-			<div class="form-group">
 				<label for="gemini_api_key">Gemini API Key:</label>
 				<input type="text" id="gemini_api_key" name="gemini_api_key" placeholder="AIza..." />
 				<p class="current-key">Current: {data.apiKeys?.gemini}</p>
