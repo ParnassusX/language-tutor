@@ -12,9 +12,35 @@ import {
 } from '$env/static/private';
 import { kv } from '@vercel/kv';
 
-const deepgram = createClient(DEEPGRAM_API_KEY);
-const translator = new deepl.Translator(DEEPL_API_KEY);
-const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+// Add logging to check for API keys
+console.log('DEEPGRAM_API_KEY available:', !!DEEPGRAM_API_KEY);
+console.log('DEEPL_API_KEY available:', !!DEEPL_API_KEY);
+console.log('GEMINI_API_KEY available:', !!GEMINI_API_KEY);
+console.log('KV_URL available:', !!KV_URL);
+
+import type { DeepgramClient } from '@deepgram/sdk';
+
+let deepgram: DeepgramClient | undefined;
+let translator: deepl.Translator | undefined;
+let genAI: GoogleGenerativeAI | undefined;
+
+if (DEEPGRAM_API_KEY) {
+	deepgram = createClient(DEEPGRAM_API_KEY);
+} else {
+	console.error('Deepgram API Key is not set.');
+}
+
+if (DEEPL_API_KEY) {
+	translator = new deepl.Translator(DEEPL_API_KEY);
+} else {
+	console.error('DeepL API Key is not set.');
+}
+
+if (GEMINI_API_KEY) {
+	genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+} else {
+	console.error('Gemini API Key is not set.');
+}
 
 // In-memory store as a fallback for Vercel KV
 const memoryStore = new Map<string, Content[]>();
@@ -42,6 +68,10 @@ export const POST: RequestHandler = async ({ request }) => {
 	const audioBuffer = Buffer.from(audioBase64.split(',')[1], 'base64');
 
 	try {
+		if (!deepgram || !translator || !genAI) {
+			throw new Error('One or more API clients failed to initialize.');
+		}
+
 		const { result: transcriptionResult, error } = await deepgram.listen.prerecorded.transcribeFile(
 			audioBuffer,
 			{
