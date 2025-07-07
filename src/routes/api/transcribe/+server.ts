@@ -5,10 +5,10 @@ import * as deepl from 'deepl-node';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import type { Content } from '@google/generative-ai';
 import {
-	DEEPGRAM_API_KEY,
-	DEEPL_API_KEY,
-	GEMINI_API_KEY,
-	KV_URL
+    DEEPGRAM_API_KEY,
+    DEEPL_API_KEY,
+    GEMINI_API_KEY,
+    KV_URL
 } from '$env/static/private';
 import { kv } from '@vercel/kv';
 
@@ -16,22 +16,27 @@ const deepgram = createClient(DEEPGRAM_API_KEY);
 const translator = new deepl.Translator(DEEPL_API_KEY);
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
-export const POST: RequestHandler = async ({ request }) => {
-	const action = request.headers.get('X-Action');
-	const userId = 'user_123'; // In a real app, you'd get this from the session
+// In-memory store as a fallback for Vercel KV
+const memoryStore = new Map<string, Content[]>();
 
-	if (action === 'clear') {
-		try {
-			if (KV_URL) {
-				await kv.del(userId);
-			}
-			return json({ status: 'success', message: 'History cleared.' });
-		} catch (err) {
-			const error = err as Error;
-			console.error('Error clearing history:', error.message);
-			return json({ status: 'error', message: 'Failed to clear history.' }, { status: 500 });
-		}
-	}
+export const POST: RequestHandler = async ({ request }) => {
+    const action = request.headers.get('X-Action');
+    const userId = 'user_123'; // In a real app, you'd get this from the session
+
+    if (action === 'clear') {
+        try {
+            if (KV_URL) {
+                await kv.del(userId);
+            } else {
+                memoryStore.delete(userId);
+            }
+            return json({ status: 'success', message: 'History cleared.' });
+        } catch (err) {
+            const error = err as Error;
+            console.error('Error clearing history:', error.message);
+            return json({ status: 'error', message: 'Failed to clear history.' }, { status: 500 });
+        }
+    }
 
 	const { audio: audioBase64, topic } = await request.json();
 	const audioBuffer = Buffer.from(audioBase64.split(',')[1], 'base64');
@@ -58,7 +63,10 @@ export const POST: RequestHandler = async ({ request }) => {
 		// Read memory from Vercel KV
 		let history: Content[] = [];
 		if (KV_URL) {
-			history = (await kv.get(userId)) || [];
+		    history = (await kv.get(userId)) || [];
+		} else {
+		    // Fallback to a simple in-memory store if KV is not configured
+		    history = memoryStore.get(userId) || [];
 		}
 
 		const model = genAI.getGenerativeModel({
@@ -83,8 +91,10 @@ export const POST: RequestHandler = async ({ request }) => {
 
 		// Update memory in Vercel KV
 		if (KV_URL) {
-			await kv.set(userId, await chat.getHistory());
-		}
+					await kv.set(userId, await chat.getHistory());
+				} else {
+					memoryStore.set(userId, await chat.getHistory());
+				}
 
 		const germanTranslationResult = await translator.translateText(llmResponse, 'en', 'de');
 		const germanTranslation = Array.isArray(germanTranslationResult)
