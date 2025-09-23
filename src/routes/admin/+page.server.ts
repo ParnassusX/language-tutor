@@ -4,12 +4,15 @@ import {
 	DEEPGRAM_API_KEY,
 	DEEPL_API_KEY,
 	GEMINI_API_KEY,
-	VERCEL_TOKEN,
-	VERCEL_PROJECT_ID,
-	VERCEL_TEAM_ID,
 	ADMIN_PASSWORD
 } from '$env/static/private';
+import { env } from '$env/dynamic/private';
 import { dev } from '$app/environment';
+
+// Default values for Railway deployment (Vercel variables not needed)
+const VERCEL_TOKEN_VALUE = env.VERCEL_TOKEN || '';
+const VERCEL_PROJECT_ID_VALUE = env.VERCEL_PROJECT_ID || '';
+const VERCEL_TEAM_ID_VALUE = env.VERCEL_TEAM_ID || '';
 
 export const load: PageServerLoad = ({ cookies }) => {
 	const sessionCookie = cookies.get('session');
@@ -90,11 +93,11 @@ export const actions: Actions = {
 		try {
 			for (const key of keysToUpdate) {
 				const response = await fetch(
-					`https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}`,
+					`https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID_VALUE}/env?teamId=${VERCEL_TEAM_ID_VALUE}`,
 					{
 						method: 'POST',
 						headers: {
-							Authorization: `Bearer ${VERCEL_TOKEN}`,
+							Authorization: `Bearer ${VERCEL_TOKEN_VALUE}`,
 							'Content-Type': 'application/json'
 						},
 						body: JSON.stringify({
