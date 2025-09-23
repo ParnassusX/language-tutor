@@ -1,13 +1,13 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import {
-	ADMIN_PASSWORD,
 	DEEPGRAM_API_KEY,
 	DEEPL_API_KEY,
 	GEMINI_API_KEY,
 	VERCEL_TOKEN,
 	VERCEL_PROJECT_ID,
-	VERCEL_TEAM_ID
+	VERCEL_TEAM_ID,
+	ADMIN_PASSWORD
 } from '$env/static/private';
 import { dev } from '$app/environment';
 
