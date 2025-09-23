@@ -18,26 +18,25 @@ console.log('Using in-memory store for Railway (KV_URL removed)');
 
 import type { DeepgramClient } from '@deepgram/sdk';
 
-let deepgram: DeepgramClient | undefined;
-let translator: deepl.Translator | undefined;
-let genAI: GoogleGenerativeAI | undefined;
-
-if (DEEPGRAM_API_KEY) {
-	deepgram = createClient(DEEPGRAM_API_KEY);
-} else {
-	console.error('Deepgram API Key is not set.');
+// Initialize APIs dynamically (for Railway deployment)
+function getDeepgramClient(): DeepgramClient | null {
+	if (!DEEPGRAM_API_KEY) return null;
+	return createClient(DEEPGRAM_API_KEY);
 }
 
-if (DEEPL_API_KEY) {
-	translator = new deepl.Translator(DEEPL_API_KEY);
-} else {
-	console.error('DeepL API Key is not set.');
+function getTranslator(): deepl.Translator | null {
+	if (!DEEPL_API_KEY) return null;
+	try {
+		return new deepl.Translator(DEEPL_API_KEY);
+	} catch (error) {
+		console.error('Failed to initialize DeepL translator:', error);
+		return null;
+	}
 }
 
-if (GEMINI_API_KEY) {
-	genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-} else {
-	console.error('Gemini API Key is not set.');
+function getGeminiAI(): GoogleGenerativeAI | null {
+	if (!GEMINI_API_KEY) return null;
+	return new GoogleGenerativeAI(GEMINI_API_KEY);
 }
 
 // In-memory store as a fallback for Vercel KV
@@ -62,6 +61,10 @@ export const POST: RequestHandler = async ({ request }) => {
 	const audioBuffer = Buffer.from(audioBase64.split(',')[1], 'base64');
 
 	try {
+		const deepgram = getDeepgramClient();
+		const translator = getTranslator();
+		const genAI = getGeminiAI();
+
 		if (!deepgram || !translator || !genAI) {
 			throw new Error('One or more API clients failed to initialize.');
 		}

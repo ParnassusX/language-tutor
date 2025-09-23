@@ -1,10 +1,17 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { withDeepLTimeout, TimeoutError } from '$lib/utils/timeout';
-import * as deepl from 'deepl-node';
-
-// Initialize DeepL translator
-const translator = new deepl.Translator(process.env.DEEPL_API_KEY || '');
+// Dynamic DeepL translator initialization (for Railway deployment)
+function getDeepLTranslator(): deepl.Translator | null {
+    const apiKey = process.env.DEEPL_API_KEY;
+    if (!apiKey) return null;
+    try {
+        return new deepl.Translator(apiKey);
+    } catch (error) {
+        console.error('Failed to initialize DeepL translator:', error);
+        return null;
+    }
+}
 
 export const POST: RequestHandler = async ({ request }) => {
     const startTime = Date.now();
@@ -32,13 +39,21 @@ export const POST: RequestHandler = async ({ request }) => {
             }, { status: 400 });
         }
         
+        const translator = getDeepLTranslator();
+        if (!translator) {
+            return json({
+                success: false,
+                error: 'DeepL API key not configured'
+            }, { status: 500 });
+        }
+
         // Test DeepL translation with timeout
         console.log(`[test-deepl] Calling DeepL API...`);
-        
+
         const translationPromise = translator.translateText(
             text,
             sourceLang || null,
-            targetLang as deepl.TargetLanguageCode
+            targetLang as any // deepl.TargetLanguageCode
         );
         
         const result = await withDeepLTimeout(translationPromise);
