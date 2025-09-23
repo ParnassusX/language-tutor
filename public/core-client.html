@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Language Tutor - Core Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .connected { background-color: #d4edda; }
+        .disconnected { background-color: #f8d7da; }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        #transcript, #response {
+            margin: 20px 0;
+            padding: 10px;
+            border: 1px solid #ddd;
+            min-height: 50px;
+        }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <h1>Language Tutor - Core Test</h1>
+    
+    <div id="connection-status" class="status disconnected">
+        Disconnected
+    </div>
+    
+    <div>
+        <button id="connect-btn">Connect</button>
+        <button id="start-btn" disabled>Start Listening</button>
+        <button id="stop-btn" disabled>Stop Listening</button>
+        <button id="test-btn" disabled>Send Test Message</button>
+    </div>
+    
+    <div>
+        <h3>Transcript:</h3>
+        <div id="transcript"></div>
+        
+        <h3>AI Response:</h3>
+        <div id="response"></div>
+        
+        <audio id="audio-player" controls></audio>
+    </div>
+    
+    <script>
+        // DOM elements
+        const statusEl = document.getElementById('connection-status');
+        const connectBtn = document.getElementById('connect-btn');
+        const startBtn = document.getElementById('start-btn');
+        const stopBtn = document.getElementById('stop-btn');
+        const testBtn = document.getElementById('test-btn');
+        const transcriptEl = document.getElementById('transcript');
+        const responseEl = document.getElementById('response');
+        const audioPlayer = document.getElementById('audio-player');
+        
+        // WebSocket connection
+        let socket = null;
+        let mediaRecorder = null;
+        let audioChunks = [];
+        let clientId = null;
+        
+        // Update UI based on connection status
+        function updateUI(connected) {
+            statusEl.textContent = connected ? 'Connected' : 'Disconnected';
+            statusEl.className = `status ${connected ? 'connected' : 'disconnected'}`;
+            
+            connectBtn.textContent = connected ? 'Disconnect' : 'Connect';
+            startBtn.disabled = !connected;
+            stopBtn.disabled = !connected;
+            testBtn.disabled = !connected;
+        }
+        
+        // Connect to WebSocket server
+        function connect() {
+            if (socket) {
+                disconnect();
+                return;
+            }
+            
+            const wsUrl = 'ws://localhost:3001';
+            socket = new WebSocket(wsUrl);
+            
+            socket.onopen = () => {
+                console.log('Connected to server');
+                updateUI(true);
+            };
+            
+            socket.onmessage = (event) => {
+                try {
+                    if (event.data instanceof Blob) {
+                        // Handle binary audio data
+                        const audioUrl = URL.createObjectURL(event.data);
+                        audioPlayer.src = audioUrl;
+                        audioPlayer.play().catch(e => console.error('Error playing audio:', e));
+                        return;
+                    }
+                    
+                    const data = JSON.parse(event.data);
+                    console.log('Received:', data);
+                    
+                    switch (data.type) {
+                        case 'welcome':
+                            clientId = data.clientId;
+                            console.log('Client ID:', clientId);
+                            break;
+                            
+                        case 'text_response':
+                            responseEl.textContent = data.text;
+                            break;
+                            
+                        case 'error':
+                            console.error('Server error:', data.message, data.details);
+                            break;
+                    }
+                } catch (error) {
+                    console.error('Error processing message:', error);
+                }
+            };
+            
+            socket.onclose = () => {
+                console.log('Disconnected from server');
+                socket = null;
+                updateUI(false);
+                stopRecording();
+            };
+            
+            socket.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                updateUI(false);
+            };
+        }
+        
+        // Disconnect from server
+        function disconnect() {
+            if (socket) {
+                socket.close();
+                socket = null;
+            }
+            updateUI(false);
+        }
+        
+        // Start audio recording
+        async function startRecording() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream, {
+                    mimeType: 'audio/webm;codecs=opus',
+                    audioBitsPerSecond: 16000
+                });
+                
+                audioChunks = [];
+                
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) {
+                        audioChunks.push(event.data);
+                        
+                        // Send audio chunks to server
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                            if (socket && socket.readyState === WebSocket.OPEN) {
+                                socket.send(JSON.stringify({
+                                    type: 'audio',
+                                    chunk: Array.from(new Uint8Array(reader.result))
+                                }));
+                            }
+                        };
+                        reader.readAsArrayBuffer(event.data);
+                    }
+                };
+                
+                mediaRecorder.start(100); // Collect 100ms of audio per chunk
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+                
+                // Notify server to start listening
+                if (socket && socket.readyState === WebSocket.OPEN) {
+                    socket.send(JSON.stringify({
+                        type: 'start_listening'
+                    }));
+                }
+                
+            } catch (error) {
+                console.error('Error starting recording:', error);
+                alert('Error accessing microphone. Please check permissions.');
+            }
+        }
+        
+        // Stop audio recording
+        function stopRecording() {
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+                mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                mediaRecorder = null;
+            }
+            
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+            
+            // Notify server to stop listening
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({
+                    type: 'stop_listening'
+                }));
+            }
+        }
+        
+        // Send test message
+        function sendTestMessage() {
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                const testMessage = 'Hello, can you help me learn German?';
+                transcriptEl.textContent = testMessage;
+                
+                socket.send(JSON.stringify({
+                    type: 'text',
+                    text: testMessage
+                }));
+            }
+        }
+        
+        // Event listeners
+        connectBtn.addEventListener('click', connect);
+        startBtn.addEventListener('click', startRecording);
+        stopBtn.addEventListener('click', stopRecording);
+        testBtn.addEventListener('click', sendTestMessage);
+        
+        // Initialize
+        updateUI(false);
+    </script>
+</body>
+</html>

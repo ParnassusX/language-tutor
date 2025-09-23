@@ -1,0 +1,1090 @@
+import { WebSocket, WebSocketServer } from 'ws';
+import { createServer } from 'http';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+import dotenv from 'dotenv';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import deepl from 'deepl-node';
+import { textToSpeech, getAvailableVoices } from './tts.js';
+
+// Load environment variables
+dotenv.config();
+
+// Configuration
+const PORT = process.env.WS_PORT || 3001;
+const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const DEEPL_API_KEY = process.env.DEEPL_API_KEY;
+
+// Validate required environment variables
+if (!DEEPGRAM_API_KEY || !GEMINI_API_KEY) {
+    console.error('Missing required environment variables');
+    console.error('Please set DEEPGRAM_API_KEY and GEMINI_API_KEY in your .env file');
+    process.exit(1);
+}
+
+// Initialize APIs
+const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+const translator = DEEPL_API_KEY ? new deepl.Translator(DEEPL_API_KEY) : null;
+
+// Model configuration
+const MODEL_NAME = 'gemini-1.5-flash';
+const MODEL_CONFIG = {
+    temperature: 0.7,
+    topP: 0.95,
+    topK: 40,
+    maxOutputTokens: 1024,
+};
+
+// Conversation system prompt
+const SYSTEM_PROMPT = `You are a friendly and patient German language tutor. 
+Help the user practice German in a natural, conversational way. 
+Keep your responses concise and focused on language learning. 
+If the user makes mistakes, gently correct them and provide examples.`;
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// Create HTTP server
+const server = createServer();
+
+// Create WebSocket server
+const wss = new WebSocketServer({ server, clientTracking: true });
+
+// Store connected clients
+const clients = new Map();
+
+// Audio configuration
+const AUDIO_CONFIG = {
+    input: {
+        encoding: 'linear16',
+        sampleRate: 16000,
+        channels: 1
+    },
+    output: {
+        encoding: 'linear16',
+        sampleRate: 24000,
+        container: 'wav'
+    }
+};
+
+
+// Handle new WebSocket connections
+wss.on('connection', (ws, req) => {
+    const clientId = generateClientId();
+    console.log(`[${clientId}] New WebSocket connection from ${req.socket.remoteAddress}`);
+    
+    // Store client data
+    const clientData = {
+        id: clientId,
+        ws,
+        deepgramWs: null,
+        conversationContext: {
+            messages: [],
+            language: 'de',
+            voice: 'aura-asteria-en',
+            isSpeaking: false
+        }
+    };
+    
+    clients.set(clientId, clientData);
+    
+    // Initialize Deepgram connection
+    createDeepgramConnection(clientId, clientData.conversationContext.language)
+        .then(deepgramWs => {
+            clientData.deepgramWs = deepgramWs;
+            
+            // Handle Deepgram responses
+            deepgramWs.on('message', (data) => {
+                try {
+                    const result = JSON.parse(data.toString());
+                    console.log(`[${clientId}] Deepgram response:`, JSON.stringify(result, null, 2));
+                    
+                    // Handle transcript
+                    if (result.type === 'Results') {
+                        const transcript = result.channel?.alternatives?.[0]?.transcript;
+                        if (transcript && transcript.trim()) {
+                            console.log(`[${clientId}] Received transcript:`, transcript);
+                            handleTranscript(clientId, transcript);
+                        }
+                    }
+                } catch (error) {
+                    console.error(`[${clientId}] Error processing Deepgram response:`, error);
+                    sendError(clientId, 'Error processing audio');
+                }
+            });
+            
+            // Handle Deepgram errors
+            deepgramWs.on('error', (error) => {
+                console.error(`[${clientId}] Deepgram WebSocket error:`, error);
+                sendError(clientId, 'Deepgram connection error');
+            });
+            
+            // Handle Deepgram close
+            deepgramWs.on('close', () => {
+                console.log(`[${clientId}] Deepgram WebSocket closed`);
+                // Attempt to reconnect if needed
+                if (clients.has(clientId)) {
+                    console.log(`[${clientId}] Attempting to reconnect to Deepgram...`);
+                    createDeepgramConnection(clientId, clientData.conversationContext.language)
+                        .then(newDeepgramWs => {
+                            clientData.deepgramWs = newDeepgramWs;
+                        })
+                        .catch(error => {
+                            console.error(`[${clientId}] Failed to reconnect to Deepgram:`, error);
+                            sendError(clientId, 'Failed to reconnect to speech service');
+                        });
+                }
+            });
+        })
+        .catch(error => {
+            console.error(`[${clientId}] Failed to create Deepgram connection:`, error);
+            sendError(clientId, 'Failed to connect to speech service');
+        });
+    
+    // Send initialization message to client
+    ws.send(JSON.stringify({
+        type: 'initialization',
+        clientId,
+        status: 'connected',
+        message: 'Connected to server. Ready to process your requests.'
+    }));
+    
+    console.log(`[${clientId}] Client initialized`);
+                                            details: error.message
+                                        }));
+                                    });
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.error(`[${clientId}] Error processing Deepgram response:`, error);
+                }
+            });
+            
+            // Send initialization message to client
+            ws.send(JSON.stringify({
+                type: 'initialization',
+                clientId,
+                status: 'connected',
+                message: 'Connected to server. Ready to process your requests.'
+            }));
+            
+            console.log(`[${clientId}] Client initialized`);
+        })
+        .catch(error => {
+            console.error(`[${clientId}] Failed to initialize Deepgram:`, error);
+            ws.send(JSON.stringify({
+                type: 'error',
+                message: 'Failed to initialize speech recognition',
+                details: error.message
+            }));
+            ws.close();
+        });
+    
+    // Handle incoming messages from client
+    ws.on('message', async (message) => {
+        try {
+            // Handle binary audio data
+            if (message instanceof Buffer || message instanceof ArrayBuffer) {
+                const audioData = message instanceof Buffer ? message : Buffer.from(message);
+                
+                // Forward audio to Deepgram if connected
+                if (clientData.deepgramWs && clientData.deepgramWs.readyState === WebSocket.OPEN) {
+                    clientData.deepgramWs.send(audioData);
+                } else {
+                    console.warn(`[${clientId}] Deepgram connection not ready`);
+                }
+                return;
+            }
+            
+            // Handle text messages (JSON)
+            const data = JSON.parse(message.toString());
+            console.log(`[${clientId}] Received message:`, data);
+            
+            switch (data.type) {
+                case 'start_call':
+                    // Reinitialize Deepgram connection
+                    if (clientData.deepgramWs) {
+                        clientData.deepgramWs.terminate();
+                    }
+                    clientData.deepgramWs = await createDeepgramConnection(
+                        clientId, 
+                        clientData.conversationContext.language
+                    );
+                    ws.send(JSON.stringify({ type: 'status', status: 'call_started' }));
+                    break;
+                    
+                case 'end_call':
+                    // Close Deepgram connection
+                    if (clientData.deepgramWs) {
+                        clientData.deepgramWs.close();
+                        clientData.deepgramWs = null;
+                    }
+                    ws.send(JSON.stringify({ type: 'status', status: 'call_ended' }));
+                    break;
+                    
+                case 'settings':
+                    // Update client settings
+                    if (data.language) {
+                        clientData.conversationContext.language = data.language;
+                    }
+                    if (data.voice) {
+                        clientData.conversationContext.voice = data.voice;
+                    }
+                    ws.send(JSON.stringify({ 
+                        type: 'settings_updated', 
+                        settings: {
+                            language: clientData.conversationContext.language,
+                            voice: clientData.conversationContext.voice
+                        } 
+                    }));
+                    break;
+                    
+                default:
+                    console.warn(`[${clientId}] Unknown message type:`, data.type);
+            }
+            
+        } catch (error) {
+            console.error(`[${clientId}] Error handling message:`, error);
+            ws.send(JSON.stringify({ 
+                type: 'error', 
+                message: 'Error processing message',
+                details: error.message 
+            }));
+        }
+    });
+    
+    // Handle client disconnection
+    ws.on('close', () => {
+        console.log(`[${clientId}] Client disconnected`);
+        // Clean up Deepgram connection
+        if (clientData.deepgramWs) {
+            clientData.deepgramWs.close();
+        }
+        clients.delete(clientId);
+    });
+    
+    // Handle errors
+    ws.on('error', (error) => {
+        console.error(`[${clientId}] WebSocket error:`, error);
+    });
+});
+
+// Start the server
+server.listen(PORT, () => {
+    console.log(`WebSocket server running on port ${PORT}`);
+});
+
+// Agent configuration
+const AGENT_CONFIG = {
+    language: 'de',
+    listen: {
+        provider: 'deepgram',
+        model: 'nova-3',
+        language: 'de',
+        interimResults: true,
+        smartFormat: true,
+        punctuation: true
+    },
+    think: {
+        provider: 'gemini',
+        model: 'gemini-1.5-flash',
+        temperature: 0.7,
+        maxTokens: 1024
+    },
+    speak: {
+        provider: 'deepgram',
+        model: 'aura-asteria-en',
+        voice: 'aura-asteria-en'
+    }
+};
+
+// Event types for WebSocket communication
+const AGENT_EVENTS = {
+    // Client to server
+    AUDIO: 'audio',
+    TEXT: 'text',
+    SETTINGS: 'settings',
+    KEEP_ALIVE: 'keepalive',
+    
+    // Server to client
+    AUDIO_DATA: 'audio_data',
+    TRANSCRIPT: 'transcript',
+    RESPONSE: 'response',
+    ERROR: 'error',
+    STATUS: 'status',
+    VOICES: 'voices',
+    WELCOME: 'welcome'
+};
+
+// Deepgram WebSocket URL
+const DEEPGRAM_WS_URL = 'wss://api.deepgram.com/v1/listen';
+
+// Client ID generator (moved to the top to avoid duplicate declarations)
+const generateClientId = () => `client_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+/**
+ * Create a WAV header for audio data
+ * @param {number} sampleRate - Sample rate in Hz
+ * @param {number} numChannels - Number of audio channels
+ * @param {number} bitsPerSample - Bits per sample (16 or 8)
+ * @param {number} dataSize - Size of the audio data in bytes
+ * @returns {Buffer} WAV header buffer
+ */
+function createWavHeader(sampleRate, numChannels, bitsPerSample, dataSize) {
+    const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
+    const blockAlign = numChannels * (bitsPerSample / 8);
+    const header = Buffer.alloc(44);
+    
+    // RIFF header
+    header.write('RIFF', 0);
+    header.writeUInt32LE(36 + dataSize, 4); // File size - 8
+    header.write('WAVE', 8);
+    
+    // fmt subchunk
+    header.write('fmt ', 12);
+    header.writeUInt32LE(16, 16); // Subchunk1Size (16 for PCM)
+    header.writeUInt16LE(1, 20); // AudioFormat (1 = PCM)
+    header.writeUInt16LE(numChannels, 22);
+    header.writeUInt32LE(sampleRate, 24);
+    header.writeUInt32LE(byteRate, 28);
+    header.writeUInt16LE(blockAlign, 32);
+    header.writeUInt16LE(bitsPerSample, 34);
+    
+    // data subchunk
+    header.write('data', 36);
+    header.writeUInt32LE(dataSize, 40); // Subchunk2Size
+    
+    return header;
+}
+
+/**
+ * Create a Deepgram WebSocket connection for speech recognition
+ * @param {string} clientId - Client ID
+ * @param {Object} options - Connection options
+ * @returns {WebSocket} Configured WebSocket connection
+ */
+async function createDeepgramConnection(clientId, options = {}) {
+    console.log(`[${clientId}] Creating Deepgram connection`);
+    
+    const {
+        language = AGENT_CONFIG.language,
+        model = AGENT_CONFIG.listen.model,
+        sampleRate = AUDIO_CONFIG.input.sampleRate,
+        channels = AUDIO_CONFIG.input.channels,
+        interimResults = AGENT_CONFIG.listen.interimResults,
+        smartFormat = AGENT_CONFIG.listen.smartFormat,
+        punctuation = AGENT_CONFIG.listen.punctuation
+    } = options;
+    
+    const deepgramUrl = new URL(DEEPGRAM_WS_URL);
+    deepgramUrl.searchParams.append('model', model);
+    deepgramUrl.searchParams.append('language', language);
+    deepgramUrl.searchParams.append('smart_format', smartFormat.toString());
+    deepgramUrl.searchParams.append('punctuate', punctuation.toString());
+    deepgramUrl.searchParams.append('encoding', AUDIO_CONFIG.input.encoding);
+    deepgramUrl.searchParams.append('sample_rate', sampleRate.toString());
+    deepgramUrl.searchParams.append('channels', channels.toString());
+    deepgramUrl.searchParams.append('interim_results', interimResults.toString());
+    
+    console.log(`[${clientId}] Deepgram URL: ${deepgramUrl.toString().replace(DEEPGRAM_API_KEY, '***')}`);
+
+    return new Promise((resolve, reject) => {
+        const deepgramWs = new WebSocket(deepgramUrl.toString(), {
+            headers: {
+                'Authorization': `Token ${DEEPGRAM_API_KEY}`,
+                'Origin': 'http://localhost:3000'
+            }
+        });
+
+        // Store the Deepgram WebSocket connection with the client
+        const client = clients.get(clientId);
+        if (client) {
+            client.deepgramWs = deepgramWs;
+        }
+
+        deepgramWs.on('open', () => {
+            console.log(`[${clientId}] Deepgram WebSocket connected`);
+            resolve(deepgramWs);
+        });
+
+        deepgramWs.on('message', (data) => {
+            try {
+                const message = JSON.parse(data);
+                if (message.type === 'Results' && message.channel?.alternatives?.[0]?.transcript) {
+                    const transcript = message.channel.alternatives[0].transcript;
+                    const isFinal = message.is_final === true;
+                    
+                    if (isFinal) {
+                        console.log(`[${clientId}] Final transcript: ${transcript}`);
+                        handleTranscript(clientId, transcript);
+                    } else if (interimResults) {
+                        console.log(`[${clientId}] Interim transcript: ${transcript}`);
+                        // Send interim results to client
+                        const client = clients.get(clientId);
+                        if (client) {
+                            client.send({
+                                type: AGENT_EVENTS.TRANSCRIPT,
+                                text: transcript,
+                                isFinal: false,
+                                timestamp: new Date().toISOString()
+                            });
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error(`[${clientId}] Error processing Deepgram message:`, error);
+            }
+        });
+
+        deepgramWs.on('error', (error) => {
+            console.error(`[${clientId}] Deepgram WebSocket error:`, error);
+            sendError(clientId, 'Deepgram connection error');
+            if (!deepgramWs.CONNECTING && !deepgramWs.OPEN) {
+                reject(error);
+            }
+        });
+
+        deepgramWs.on('close', () => {
+            console.log(`[${clientId}] Deepgram WebSocket closed`);
+            const client = clients.get(clientId);
+            if (client && client.deepgramWs === deepgramWs) {
+                client.deepgramWs = null;
+            }
+        });
+    });
+}
+
+/**
+ * Get available voices for TTS
+ * @returns {Promise<Array<Object>>} List of available voices
+ */
+async function loadAvailableVoices() {
+    try {
+        const voices = await getAvailableVoices();
+        console.log(`Loaded ${voices.length} TTS voices`);
+        return voices;
+    } catch (error) {
+        console.error('Failed to load TTS voices:', error);
+        return [];
+    }
+}
+
+// Store available voices
+let availableVoices = [];
+
+// Initialize available voices when server starts
+loadAvailableVoices().then(voices => {
+    availableVoices = voices;
+});
+
+// Periodically refresh available voices (every hour)
+setInterval(async () => {
+    availableVoices = await loadAvailableVoices();
+}, 3600000);
+
+/**
+ * Initialize a new client connection
+ * @param {WebSocket} ws - WebSocket connection
+ * @param {Object} req - HTTP request object
+ */
+function handleNewConnection(ws, req) {
+    const clientId = generateClientId();
+    const clientIp = req.socket.remoteAddress;
+    
+    console.log(`[${clientId}] New connection from ${clientIp}`);
+    
+    // Initialize client state
+    const client = {
+        id: clientId,
+        ws,
+        deepgramWs: null,
+        lastActivity: Date.now(),
+        keepAliveInterval: null,
+        conversationContext: {
+            history: [
+                {
+                    role: 'system',
+                    parts: [{ text: SYSTEM_PROMPT }]
+                }
+            ],
+            language: AGENT_CONFIG.language,
+            voice: AGENT_CONFIG.speak.voice,
+            isSpeaking: false,
+            isListening: false,
+            audioBuffer: []
+        },
+        
+        /**
+         * Send data to the client
+         * @param {Object|Buffer} data - Data to send
+         * @param {boolean} [isBinary=false] - Whether the data is binary
+         */
+        send: function(data, isBinary = false) {
+            if (this.ws.readyState === WebSocket.OPEN) {
+                try {
+                    if (isBinary || Buffer.isBuffer(data)) {
+                        this.ws.send(data, { binary: true });
+                    } else {
+                        const message = {
+                            ...data,
+                            timestamp: new Date().toISOString(),
+                            clientId: this.id
+                        };
+                        this.ws.send(JSON.stringify(message));
+                    }
+                    this.lastActivity = Date.now();
+                } catch (error) {
+                    console.error(`[${this.id}] Error sending message:`, error);
+                }
+            }
+        },
+        
+        /**
+         * Initialize the client connection
+         */
+        initialize: async function() {
+            try {
+                // Start keep-alive
+                this.keepAliveInterval = setInterval(() => {
+                    if (Date.now() - this.lastActivity > 30000) { // 30s timeout
+                        this.send({
+                            type: AGENT_EVENTS.KEEP_ALIVE,
+                            timestamp: Date.now()
+                        });
+                    }
+                }, 10000); // Send keepalive every 10s
+                
+                // Initialize Deepgram connection
+                this.deepgramWs = await createDeepgramConnection(this.id, {
+                    language: this.conversationContext.language,
+                    model: AGENT_CONFIG.listen.model
+                });
+                
+                // Send welcome message with configuration
+                this.send({
+                    type: AGENT_EVENTS.WELCOME,
+                    message: 'Connected to Language Tutor',
+                    config: {
+                        audio: AUDIO_CONFIG,
+                        agent: AGENT_CONFIG,
+                        clientId: this.id
+                    },
+                    voices: availableVoices
+                });
+                
+                console.log(`[${this.id}] Client initialized`);
+            } catch (error) {
+                console.error(`[${this.id}] Error initializing client:`, error);
+                this.send({
+                    type: AGENT_EVENTS.ERROR,
+                    message: 'Failed to initialize connection',
+                    details: error.message
+                });
+                this.ws.close(1011, 'Initialization failed');
+            }
+        },
+        
+        /**
+         * Handle incoming audio data
+         * @param {Buffer} audioData - Raw audio data
+         */
+        handleAudioData: async function(audioData) {
+            if (!audioData || audioData.length === 0) {
+                console.warn(`[${this.id}] Empty audio data received`);
+                return;
+            }
+
+            if (!this.deepgramWs || this.deepgramWs.readyState !== WebSocket.OPEN) {
+                console.warn(`[${this.id}] Deepgram connection not ready, reconnecting...`);
+                try {
+                    this.deepgramWs = await createDeepgramConnection(this.id, {
+                        language: this.conversationContext.language,
+                        model: AGENT_CONFIG.listen.model
+                    });
+                } catch (error) {
+                    console.error(`[${this.id}] Failed to reconnect to Deepgram:`, error);
+                    this.send({
+                        type: AGENT_EVENTS.ERROR,
+                        message: 'Failed to connect to speech service',
+                        details: error.message
+                    });
+                    return;
+                }
+            }
+            
+            try {
+                // Log first few bytes for debugging
+                const sample = audioData.slice(0, Math.min(10, audioData.length));
+                console.log(`[${this.id}] Sending ${audioData.length} bytes to Deepgram, sample:`, 
+                    Array.from(sample).map(b => b.toString(16).padStart(2, '0')).join(' '));
+                    
+                // Send audio data to Deepgram
+                this.deepgramWs.send(audioData);
+                
+                // Update conversation state
+                if (!this.conversationContext.isListening) {
+                    this.conversationContext.isListening = true;
+                    this.send({
+                        type: AGENT_EVENTS.STATUS,
+                        status: 'listening',
+                        timestamp: new Date().toISOString()
+                    });
+                }
+            } catch (error) {
+                console.error(`[${this.id}] Error sending audio to Deepgram:`, error);
+                this.send({
+                    type: AGENT_EVENTS.ERROR,
+                    message: 'Error processing audio',
+                    details: error.message
+                });
+            }
+        },
+        
+        /**
+         * Stream TTS audio to the client
+         * @param {string} text - Text to convert to speech
+         * @param {string} [voiceId] - Optional voice ID to use
+         */
+        streamTTS: async function(text, voiceId = this.conversationContext.voice) {
+            if (!text) {
+                console.warn(`[${this.id}] No text provided for TTS`);
+                return;
+            }
+            
+            console.log(`[${this.id}] Starting TTS for text (${text.length} chars)`);
+            
+            try {
+                // Update conversation state
+                this.conversationContext.isSpeaking = true;
+                
+                // Notify client that TTS is starting
+                this.send({
+                    type: AGENT_EVENTS.STATUS,
+                    status: 'speaking',
+                    text: text,
+                    timestamp: new Date().toISOString()
+                });
+                
+                // Get TTS audio stream
+                const audioStream = await textToSpeech(text, { 
+                    voice: voiceId,
+                    model: AGENT_CONFIG.speak.model,
+                    encoding: AUDIO_CONFIG.output.encoding,
+                    sampleRate: AUDIO_CONFIG.output.sampleRate
+                });
+                
+                // Process audio stream in chunks
+                let audioBuffer = Buffer.alloc(0);
+                
+                for await (const chunk of audioStream) {
+                    if (!chunk || chunk.length === 0) continue;
+                    
+                    // Convert chunk to buffer if needed
+                    const chunkBuffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+                    audioBuffer = Buffer.concat([audioBuffer, chunkBuffer]);
+                    
+                    // Send audio data in reasonable chunks (e.g., 4KB)
+                    const CHUNK_SIZE = 4096;
+                    while (audioBuffer.length >= CHUNK_SIZE) {
+                        const sendChunk = audioBuffer.slice(0, CHUNK_SIZE);
+                        audioBuffer = audioBuffer.slice(CHUNK_SIZE);
+                        
+                        // Send audio chunk to client
+                        this.send(sendChunk, true);
+                    }
+                }
+                
+                // Send any remaining audio data
+                if (audioBuffer.length > 0) {
+                    this.send(audioBuffer, true);
+                }
+                
+                // Notify client that TTS is complete
+                this.send({
+                    type: AGENT_EVENTS.STATUS,
+                    status: 'idle',
+                    timestamp: new Date().toISOString()
+                });
+                
+                console.log(`[${this.id}] TTS completed for ${text.length} chars`);
+                
+            } catch (error) {
+                console.error(`[${this.id}] Error in TTS streaming:`, error);
+                this.send({
+                    type: AGENT_EVENTS.ERROR,
+                    message: 'TTS generation failed',
+                    details: error.message
+                });
+            } finally {
+                this.conversationContext.isSpeaking = false;
+            }
+        },
+        
+        /**
+         * Clean up client resources
+         */
+        cleanup: function() {
+            // Clear keep-alive interval
+            if (this.keepAliveInterval) {
+                clearInterval(this.keepAliveInterval);
+                this.keepAliveInterval = null;
+            }
+            
+            // Close Deepgram connection
+            if (this.deepgramWs && this.deepgramWs.readyState === WebSocket.OPEN) {
+                this.deepgramWs.close();
+            }
+            
+            // Close WebSocket if still open
+            if (this.ws.readyState === WebSocket.OPEN) {
+                this.ws.close();
+            }
+            
+            console.log(`[${this.id}] Client connection cleaned up`);
+    
+    // Initialize client connection
+    (async () => {
+        try {
+            // Send initialization message to client with available voices
+            client.send({
+                type: 'initialization',
+                clientId: clientId,
+                status: 'connected',
+                message: 'Connected to server. Ready to process your requests.',
+                voices: availableVoices
+            });
+
+            // Initialize Deepgram connection
+            const deepgramWs = await createDeepgramConnection(clientId, client.conversationContext.language);
+            client.deepgramWs = deepgramWs;
+            console.log(`[${clientId}] Deepgram connection established`);
+            
+            // Send ready status to client
+            client.send({
+                type: 'status',
+                status: 'ready',
+                message: 'Speech recognition is ready. You can start speaking.'
+            });
+
+            // Set up Deepgram message handler
+            deepgramWs.on('message', (data) => {
+                try {
+                    const result = JSON.parse(data.toString());
+                    console.log(`[${clientId}] Deepgram response:`, JSON.stringify(result, null, 2));
+                    
+                    // Handle transcript
+                    if (result.type === 'Results') {
+                        const transcript = result.channel?.alternatives?.[0]?.transcript;
+                        if (transcript && transcript.trim()) {
+                            // Process the transcript here
+                            console.log(`[${clientId}] Received transcript:`, transcript);
+                        }
+                    }
+                } catch (error) {
+                    console.error(`[${clientId}] Error processing Deepgram response:`, error);
+                    client.send(JSON.stringify({
+                        type: 'error',
+                        message: 'Error processing audio',
+                        details: error.message
+                    }));
+                }
+            });
+
+/**
+ * Handles incoming audio chunks from the client and streams them to Deepgram
+ * @param {string} clientId - The ID of the client
+ * @param {ArrayBuffer|Buffer|Object} audioData - The audio data to process
+ * @param {boolean} isFinal - Whether this is the final chunk of audio
+ */
+async function handleAudioChunk(clientId, audioData, isFinal) {
+    try {
+        const client = clients.get(clientId);
+        if (!client) {
+            console.error(`[${clientId}] Client not found`);
+            return;
+        }
+        
+        console.log(`[${clientId}] Handling audio chunk (${audioData.length} bytes), isFinal: ${isFinal}`);
+        
+        // Ensure we have a valid Deepgram connection
+        if (!client.deepgramWs || client.deepgramWs.readyState !== WebSocket.OPEN) {
+            console.log(`[${clientId}] Creating new Deepgram WebSocket connection`);
+            await createDeepgramConnection(clientId, client.language || 'de');
+            // Add a small delay to ensure the connection is established
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        
+        let audioBuffer;
+        
+        // Convert the incoming audio data to a Buffer
+        if (audioData instanceof Buffer) {
+            audioBuffer = audioData;
+        } else if (audioData instanceof ArrayBuffer) {
+            audioBuffer = Buffer.from(audioData);
+        } else if (audioData && audioData.buffer instanceof ArrayBuffer) {
+            audioBuffer = Buffer.from(audioData.buffer);
+        } else if (typeof audioData === 'string') {
+            // Handle base64 encoded string (with or without data URL prefix)
+            const base64Data = audioData.startsWith('data:') 
+                ? audioData.split(';base64,').pop() 
+                : audioData;
+            audioBuffer = Buffer.from(base64Data, 'base64');
+        } else {
+            throw new Error('Unsupported audio data format');
+        }
+        
+        if (!audioBuffer || audioBuffer.length === 0) {
+            throw new Error('Audio buffer is empty after conversion');
+        }
+        
+        // Buffer the audio data if needed
+        if (client.conversationContext.audioBuffer) {
+            client.conversationContext.audioBuffer.push(audioBuffer);
+        } else {
+            client.conversationContext.audioBuffer = [audioBuffer];
+        }
+        
+        // Send audio data to Deepgram
+        if (client.deepgramWs && client.deepgramWs.readyState === WebSocket.OPEN) {
+            try {
+                console.log(`[${clientId}] Sending ${audioData.length} bytes to Deepgram`);
+                client.deepgramWs.send(audioData);
+                console.log(`[${clientId}] Audio data sent to Deepgram successfully`);
+            } catch (error) {
+                console.error(`[${clientId}] Error sending audio to Deepgram:`, error);
+                // Attempt to reconnect on error
+                if (error.code === 'ECONNRESET' || error.code === 'EPIPE') {
+                    console.log(`[${clientId}] Attempting to reconnect to Deepgram...`);
+                    await createDeepgramConnection(clientId, client.language || 'de');
+                }
+            }
+                // If this is the final chunk, send a close message
+            // If this is the final chunk, send a close message
+            if (isFinal) {
+                try {
+                    await new Promise(resolve => setTimeout(resolve, 500)); // Give time for any pending audio to be processed
+                    if (client.deepgramWs && client.deepgramWs.readyState === WebSocket.OPEN) {
+                        client.deepgramWs.send(JSON.stringify({ type: 'CloseStream' }));
+                        console.log('Sent CloseStream message to Deepgram');
+                    }
+                } catch (error) {
+                    console.error('Error sending CloseStream message:', error);
+                }
+            }
+        } else {
+            console.warn('Deepgram WebSocket not ready, buffering audio data');
+            // Buffer the audio data for later processing
+            if (!client.conversationContext.audioBuffer) {
+                client.conversationContext.audioBuffer = [];
+            }
+            client.conversationContext.audioBuffer.push(audioBuffer);
+            console.log(`[${clientId}] Buffered audio chunk, buffer size: ${client.conversationContext.audioBuffer.length}`);
+        }
+        
+    } catch (error) {
+        console.error('Error handling audio chunk:', error);
+        sendError(clientId, `Error processing audio: ${error.message}`);
+    }
+}
+
+/**
+ * Handles a transcript from Deepgram
+ * @param {string} clientId - The ID of the client
+ * @param {string} transcript - The transcribed text
+ */
+async function handleTranscript(clientId, transcript) {
+    const client = clients.get(clientId);
+    if (!client) {
+        console.warn(`Received transcript for unknown client: ${clientId}`);
+        return;
+    }
+    
+    try {
+        console.log(`Processing transcript for client ${clientId}:`, transcript);
+        
+        // Update conversation history
+        client.conversationContext.history.push({
+            role: 'user',
+            content: transcript,
+            timestamp: new Date().toISOString()
+        });
+        
+        // Send transcription to client
+        client.send({
+            type: 'transcription',
+            text: transcript,
+            timestamp: new Date().toISOString()
+        });
+        
+        // Get AI response
+        const aiResponse = await getAIResponse(
+            client.conversationContext.history,
+            transcript,
+            client.conversationContext.language
+        );
+        
+        // Send AI response to client
+        client.send({
+            type: 'response',
+            text: aiResponse,
+            timestamp: new Date().toISOString()
+        });
+        
+        // Update conversation history with AI response
+        client.conversationContext.history.push({
+            role: 'assistant',
+            content: aiResponse,
+            timestamp: new Date().toISOString()
+        });
+        
+    } catch (error) {
+        console.error('Error handling transcript:', error);
+        sendError(clientId, `Error processing response: ${error.message}`);
+    }
+}
+
+// Handle text messages (for testing or fallback)
+async function handleTextMessage(clientId, text) {
+    const client = clients.get(clientId);
+    if (!client) return;
+
+    try {
+        // Add user message to history
+        client.conversationContext.history.push({
+            role: 'user',
+            content: text,
+            timestamp: new Date().toISOString()
+        });
+
+        // Here we'll process the text with Gemini
+        // This is a placeholder - we'll implement the actual processing next
+        console.log(`Processing text from ${clientId}: ${text}`);
+        
+        // Simulate processing delay
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // For now, just echo back a test response
+        const responseText = `You said: "${text}"`;
+        
+        const response = {
+            type: 'response',
+            text: responseText,
+            isFinal: true,
+            timestamp: new Date().toISOString()
+        };
+        
+        client.send(response);
+        
+        // Add to conversation history
+        client.conversationContext.history.push({
+            role: 'assistant',
+            content: responseText,
+            timestamp: response.timestamp
+        });
+    } catch (error) {
+        console.error('Error processing text:', error);
+        sendError(clientId, 'Error processing text');
+    }
+}
+
+// Update client settings
+function updateClientSettings(clientId, settings) {
+    const client = clients.get(clientId);
+    if (!client) return;
+
+    if (settings.language) {
+        client.conversationContext.language = settings.language;
+    }
+    
+    // Add other settings as needed
+    
+    console.log(`Updated settings for ${clientId}:`, client.conversationContext);
+}
+
+// Send error message to client
+function sendError(clientId, message) {
+    const client = clients.get(clientId);
+    if (client) {
+        client.send({
+            type: 'error',
+            message,
+            timestamp: new Date().toISOString()
+        });
+    }
+}
+
+/**
+ * Stream TTS audio for an AI response to the client
+ * @param {Object} client - The client data object
+ * @param {string} text - The text to convert to speech
+ */
+async function streamTTSResponse(client, text) {
+    try {
+        // Notify client that TTS is starting
+        client.ws.send(JSON.stringify({
+            type: 'tts_start',
+            timestamp: new Date().toISOString()
+        }));
+
+        // Generate TTS audio using Deepgram
+        const response = await textToSpeech(text, {
+            voice: client.conversationContext.voice,
+            speed: 1.0
+        });
+
+        if (!response) {
+            throw new Error('No audio data received from TTS service');
+        }
+
+        // Convert response to buffer if it's a stream
+        const audioBuffer = response instanceof Buffer ? response : Buffer.from(await response.arrayBuffer());
+        
+        // Send audio data to client in chunks
+        const CHUNK_SIZE = 4096;
+        
+        for (let i = 0; i < audioBuffer.length; i += CHUNK_SIZE) {
+            const chunk = audioBuffer.slice(i, i + CHUNK_SIZE);
+            client.ws.send(chunk, { binary: true });
+            
+            // Small delay to prevent overwhelming the client
+            await new Promise(resolve => setTimeout(resolve, 10));
+        }
+
+        // Notify client that TTS is complete
+        client.ws.send(JSON.stringify({
+            type: 'tts_end',
+            timestamp: new Date().toISOString()
+        }));
+
+    } catch (error) {
+        console.error(`[${client.id}] Error in TTS streaming:`, error);
+        client.ws.send(JSON.stringify({
+            type: 'error',
+            message: 'Error generating speech',
+            details: error.message,
+            timestamp: new Date().toISOString()
+        }));
+        throw error;
+    }
+}
+
+// Start the server
+server.listen(PORT, () => {
+    console.log(`WebSocket server running on port ${PORT}`);
+});
+
+// Handle server errors
+server.on('error', (error) => {
+    console.error('Server error:', error);
+});
+
+// Handle process termination
+process.on('SIGINT', () => {
+    console.log('Shutting down server...');
+    wss.close(() => {
+        console.log('WebSocket server closed');
+        process.exit(0);
+    });
+});
