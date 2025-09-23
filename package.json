@@ -8,6 +8,7 @@
 		"build": "vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
+		"start": "node build/index.js",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch"
 	},
@@ -23,7 +24,6 @@
 	"dependencies": {
 		"@deepgram/sdk": "^4.7.0",
 		"@google/generative-ai": "^0.24.1",
-		"@vercel/kv": "^3.0.0",
 		"deepl-node": "^1.19.0"
 	}
 }

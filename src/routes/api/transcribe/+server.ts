@@ -7,16 +7,14 @@ import type { Content } from '@google/generative-ai';
 import {
     DEEPGRAM_API_KEY,
     DEEPL_API_KEY,
-    GEMINI_API_KEY,
-    KV_URL
+    GEMINI_API_KEY
 } from '$env/static/private';
-import { kv } from '@vercel/kv';
 
 // Add logging to check for API keys
 console.log('DEEPGRAM_API_KEY available:', !!DEEPGRAM_API_KEY);
 console.log('DEEPL_API_KEY available:', !!DEEPL_API_KEY);
 console.log('GEMINI_API_KEY available:', !!GEMINI_API_KEY);
-console.log('KV_URL available:', !!KV_URL);
+console.log('Using in-memory store for Railway (KV_URL removed)');
 
 import type { DeepgramClient } from '@deepgram/sdk';
 
@@ -51,11 +49,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
     if (action === 'clear') {
         try {
-            if (KV_URL) {
-                await kv.del(userId);
-            } else {
-                memoryStore.delete(userId);
-            }
+            memoryStore.delete(userId);
             return json({ status: 'success', message: 'History cleared.' });
         } catch (err) {
             const error = err as Error;
@@ -90,14 +84,8 @@ export const POST: RequestHandler = async ({ request }) => {
 		const translationResult = await translator.translateText(transcription, 'de', 'en-US');
 		const englishText = translationResult.text;
 
-		// Read memory from Vercel KV
-		let history: Content[] = [];
-		if (KV_URL) {
-		    history = (await kv.get(userId)) || [];
-		} else {
-		    // Fallback to a simple in-memory store if KV is not configured
-		    history = memoryStore.get(userId) || [];
-		}
+		// Read memory from memory store (for Railway deployment)
+		let history: Content[] = memoryStore.get(userId) || [];
 
 		const model = genAI.getGenerativeModel({
 			model: 'gemini-1.5-flash',
@@ -119,12 +107,8 @@ export const POST: RequestHandler = async ({ request }) => {
 
 		const { response: llmResponse, languageTip } = responseObject;
 
-		// Update memory in Vercel KV
-		if (KV_URL) {
-					await kv.set(userId, await chat.getHistory());
-				} else {
-					memoryStore.set(userId, await chat.getHistory());
-				}
+		// Update memory in memory store (for Railway deployment)
+		memoryStore.set(userId, await chat.getHistory());
 
 		const germanTranslationResult = await translator.translateText(llmResponse, 'en', 'de');
 		const germanTranslation = Array.isArray(germanTranslationResult)
