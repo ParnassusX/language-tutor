@@ -22,9 +22,9 @@ const config = {
 		csrf: {
 			checkOrigin: process.env.NODE_ENV === 'production' // Only check origin in production
 		},
-		// Ensure correct paths in production
+		// Ensure correct paths in production - let Railway handle dynamic URLs
 		paths: {
-			assets: process.env.NODE_ENV === 'production' ? 'https://language-tutor-production-8569.up.railway.app' : '',
+			assets: '',
 			base: ''
 		}
 	}

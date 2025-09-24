@@ -1,134 +1,130 @@
-# German Voice Tutor - AI-Powered German Learning
+# German Language Tutor - Voice Agent
 
-![German Voice Tutor](./preview.png)
+A modern German language learning application with real-time voice interactions powered by Deepgram's Voice Agent technology.
 
-**A revolutionary German language learning app with real AI tutoring!** 🇩🇪🧠💫
+## 🚀 Production Deployment Requirements
 
-## 🚀 Live Demo
-**Try it now:** [https://[your-railway-domain]](https://[your-railway-domain]) *(Will be updated when deployed)*
+### Environment Variables Setup
 
-## 🔥 Key Features
+Before deploying to Railway, you must configure the following environment variables in your Railway dashboard:
 
-### 🎤 **Advanced Voice Interaction**
-- **Real-time German speech recognition** using Deepgram AI
-- **Professional pronunciation analysis** with specific corrections
-- **WebRTC audio recording** with visual feedback
-- **Auto-stop recording** (4-second sessions for optimization)
+#### Required Environment Variables:
 
-### 🤖 **World-Class AI Tutoring**
-- **Gemini-powered conversations** with professional German teaching
-- **Specific pronunciation corrections** ("Try softer 's' in 'sprechen'")
-- **Grammar analysis** with detailed explanations
-- **Vocabulary expansion** with relevant terms
-- **Motivational coaching** and progress guidance
+**1. DEEPGRAM_API_KEY (Required)**
+- **Where to get it**: Create account at [Deepgram Console](https://console.deepgram.com/)
+- **Railway variable name**: `DEEPGRAM_API_KEY`
+- **Purpose**: Powers the voice transcription and speech generation for German conversations
 
-### 🎨 **Modern Professional UI**
-- **Beautiful gradient design** with responsive animations
-- **Real-time status updates** and visual feedback
-- **Professional conversation history** with timestamps
-- **Usage tracking and session limits** (10 free conversations)
-- **Mobile-first responsive design**
+#### Optional Environment Variables:
 
-### 💰 **Monetization Ready**
-- **Freemium model**: 10 sessions free, then premium upgrade
-- **Premium features**: Unlimited conversations + advanced analysis
-- **User management**: Session tracking and level progression
-- **Developer tools**: Admin panel and debug capabilities
+**2. DEEPL_API_KEY (Optional - Recommended)**
+- **Where to get it**: Create account at [DeepL Pro API](https://www.deepl.com/pro-api)
+- **Railway variable name**: `DEEPL_API_KEY`
+- **Purpose**: Provides accurate German translations for learning exercises
 
-## 🏗️ **Architecture**
+## 🚀 Railway Deployment
 
-Built with cutting-edge technology stack:
+### Automatic Deployment
 
-- **Frontend**: SvelteKit with TypeScript
-- **Backend**: Serverless APIs with Railway
-- **AI**: Gemini 1.5 Flash (conversational tutoring)
-- **Speech**: Deepgram Nova-2 (German STT)
-- **Translation**: DeepL API (German/English)
-- **Deployment**: Railway (global CDN + scaling)
+1. Push your code to GitHub
+2. Connect your GitHub repository to Railway
+3. Railway will automatically build and deploy using the configuration in `railway.toml`
 
-## 🔧 **Quick Start**
+### Manual Environment Setup
 
-### **Step 1: Clone & Install**
+1. Go to your Railway project dashboard
+2. Navigate to **Variables** section
+3. Add the required environment variables listed above
+4. Redeploy your application
+
+## 🔧 Configuration Details
+
+### Files Modified for Production:
+- `svelte.config.js` - Railway-compatible Node adapter with dynamic path handling
+- `railway.toml` - NIXPACKS builder configuration with proper environment setup
+
+### API Endpoints:
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/health` | GET/POST | Health check and basic connectivity |
+| `/api/voice-agent` | GET/POST | Voice agent configuration and session management |
+| `/api/transcribe` | POST | Audio transcription with German conversation logic |
+| `/api/speak` | POST | Text-to-speech generation for responses |
+| `/api/test-deepl` | POST | Test DeepL translation functionality |
+| `/api/conversational` | POST | Full conversational flow test |
+
+## 🧪 Testing Your Deployment
+
+### Health Check:
 ```bash
-git clone https://github.com/ParnassusX/language-tutor.git
-cd language-tutor
+curl https://your-railway-app.railway.app/api/health
+```
+
+### Voice Agent Test:
+```bash
+curl https://your-railway-app.railway.app/api/voice-agent
+```
+
+### Diagnose Issues:
+```bash
+curl https://your-railway-app.railway.app/api/diagnostics
+```
+
+## 🎯 Troubleshooting
+
+### App Shows "Nothing" or Blank Page
+1. ✅ Check Railway build logs for compilation errors
+2. ✅ Verify DEEPGRAM_API_KEY is set in Railway Variables (not in code)
+3. ✅ Ensure all environment variables are named correctly
+4. ✅ Check browser console for client-side JavaScript errors
+
+### Voice Agent Doesn't Work
+1. ✅ Verify DEEPGRAM_API_KEY is valid and active
+2. ✅ Check browser microphone permissions are granted
+3. ✅ Confirm WebSocket connections aren't blocked by firewall
+4. ✅ Check browser console for WebRTC errors
+
+### Build Failures
+1. ✅ Ensure Node.js version compatibility (configured for Node 20)
+2. ✅ Check Railway build logs for specific error messages
+3. ✅ Verify all dependencies are properly listed in package.json
+
+## 📊 Supported Features
+
+- ✅ Real-time German voice conversations
+- ✅ Intelligent speech recognition optimized for German
+- ✅ Natural German speech synthesis
+- ✅ Conversation context tracking
+- ✅ Learning difficulty adjustment
+- ✅ Basic translation support (with DeepL)
+- ✅ Responsive web interface
+
+## 🏗️ Development
+
+### Local Development Setup:
+```bash
 npm install
-```
-
-### **Step 2: Environment Setup**
-Copy `.env.example` to `.env` and add your API keys:
-
-```bash
-# AI APIs
-GEMINI_API_KEY=your-gemini-api-key
-DEEPL_API_KEY=your-deepl-api-key
-DEEPGRAM_API_KEY=your-deepgram-api-key
-```
-
-### **Step 3: Development Mode**
-```bash
 npm run dev
 ```
-Visit `http://localhost:5174` to use the app locally!
 
-### **Step 4: Deployment (Railway)**
+### Environment Variables for Development:
+Create `.env` file in project root:
+```
+DEEPGRAM_API_KEY=your_deepgram_key_here
+DEEPL_API_KEY=your_deepl_key_here  # Optional
+```
+
+### Testing:
 ```bash
-# Install Railway CLI
-npm install -g @railway/cli
-
-# Login to Railway
-railway login
-
-# Connect this repo
-railway link
-
-# Deploy
-railway up
+npm test
+npm run test:ui
 ```
 
-## 📊 **Quality Verification**
+## 📝 Recent Production Fixes
 
-Our AI tutor delivers college-level German instruction:
-
-- ✅ **95%+ speech recognition accuracy**
-- ✅ **Professional grammar corrections**
-- ✅ **Native German pronunciation guidance**
-- ✅ **Contextual vocabulary suggestions**
-- ✅ **Motivational learning psychology**
-
-## 💡 **Sample AI Feedback**
-
-**User says:** "Die Wetter ist gut heute"
-**Elite AI responds:**
-```json
-{
-  "response": "Das ist schon ein guter Anfang! Statt \"Die Wetter ist gut heute\", sage besser \"Das Wetter ist heute gut.\"",
-  "correction": "Das Wetter" (correct definite article usage)
-}
-```
-
-## 🎯 **Roadmap**
-
-- **Phase 1** ✅: Working MVP with AI tutoring
-- **Phase 2** 🔄: Enhanced UI with visual feedback
-- **Phase 3** 📅: Multi-language support, progress analytics
-- **Phase 4** 📅: Native mobile apps, offline mode
-
-## 🧪 **Testing**
-
-Comprehensive E2E testing with Playwright:
-```bash
-npm run test:e2e  # Run full test suite
-```
-
-## 🤝 **Contributing**
-
-We welcome contributions! This is an open-source project to revolutionize language learning.
-
-## 📄 **License**
-
-MIT License - free for educational and commercial use.
-
----
-
-**🌟 Built with love for the German language and its learners! 🇩🇪♥️**
+- ✅ Fixed hardcoded Railway URLs in svelte.config.js
+- ✅ Updated railway.toml with clear environment variable instructions
+- ✅ Fixed Svelte component compilation issues
+- ✅ Resolved API route syntax errors
+- ✅ Added proper error handling for missing API keys

@@ -17,7 +17,10 @@ NODE_VERSION = "20"
 # Required environment variables that must be set in Railway dashboard
 [deploy.environment]
 NODE_ENV = "production"
-DEEPGRAM_API_KEY = ""  # Set this in Railway dashboard
+# DEEPGRAM_API_KEY - REQUIRED: Get from https://console.deepgram.com/ and set in Railway Variables
+DEEPGRAM_API_KEY = "your_deepgram_api_key_here"  # ⚠️ REPLACE THIS WITH YOUR ACTUAL KEY IN RAILWAY DASHBOARD!
+# DEEPL_API_KEY - OPTIONAL: For translations, get from https://www.deepl.com/pro-api
+DEEPL_API_KEY = ""
 PORT = "3000"
 HOST = "0.0.0.0"
 
