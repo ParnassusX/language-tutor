@@ -1,8 +1,25 @@
 [build]
 builder = "NIXPACKS"
+buildCommand = "npm install && npm run build"
 
 [deploy]
-startCommand = "npm start"
-healthcheckPath = "/api/health"
-healthcheckTimeout = 300
+startCommand = "node build/index.js"
+healthcheckPath = "/"
+healthcheckTimeout = 30
 restartPolicyType = "ON_FAILURE"
+
+# Environment variables needed for production
+[build.environment]
+NODE_ENV = "production"
+NODE_OPTIONS = "--max-old-space-size=1024"
+
+# Required environment variables that must be set in Railway dashboard
+[deploy.environment]
+NODE_ENV = "production"
+DEEPGRAM_API_KEY = ""  # Set this in Railway dashboard
+PORT = "3000"
+HOST = "0.0.0.0"
+
+# Build cache configuration
+[build.cache]
+directories = ["node_modules"]

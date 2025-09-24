@@ -13,12 +13,19 @@ const config = {
 		adapter: adapter({
 			// Railway deployment settings
 			out: 'build',
-			precompress: false,
-			envPrefix: ''
+			precompress: true, // Enable compression for better performance
+			envPrefix: '',
+			// Ensure static files are properly handled
+			preprocess: 'vercel'
 		}),
 		// Add this for Railway deployments
 		csrf: {
-			checkOrigin: false
+			checkOrigin: process.env.NODE_ENV === 'production' // Only check origin in production
+		},
+		// Ensure correct paths in production
+		paths: {
+			assets: process.env.NODE_ENV === 'production' ? 'https://language-tutor-production-8569.up.railway.app' : '',
+			base: ''
 		}
 	}
 };
