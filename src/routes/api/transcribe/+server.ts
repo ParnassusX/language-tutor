@@ -65,10 +65,18 @@ export const POST: RequestHandler = async ({ request }) => {
 		const translator = getTranslator();
 		const genAI = getGeminiAI();
 
+		console.log('🎯 API Client status:', {
+			deepgram: !!deepgram,
+			translator: !!translator,
+			genAI: !!genAI,
+			apiKey: DEEPGRAM_API_KEY ? DEEPGRAM_API_KEY.substring(0, 10) + '...' : 'undefined'
+		});
+
 		if (!deepgram || !translator || !genAI) {
-			throw new Error('One or more API clients failed to initialize.');
+			throw new Error(`API initialization failed - deepgram: ${!!deepgram}, translator: ${!!translator}, genAI: ${!!genAI}`);
 		}
 
+		console.log('🎵 Starting Deepgram transcription...');
 		const { result: transcriptionResult, error } = await deepgram.listen.prerecorded.transcribeFile(
 			audioBuffer,
 			{
@@ -78,8 +86,11 @@ export const POST: RequestHandler = async ({ request }) => {
 			}
 		);
 
+		console.log('🔧 Deepgram response status:', { hasResult: !!transcriptionResult, hasError: !!error });
+
 		if (error) {
-			throw new Error(error.message);
+			console.error('❌ Deepgram API Error:', error);
+			throw new Error(`Deepgram transcription failed: ${error.message}`);
 		}
 
 		const transcription = transcriptionResult.results.channels[0].alternatives[0].transcript;
