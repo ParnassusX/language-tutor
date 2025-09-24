@@ -10,7 +10,16 @@ const config = {
 	kit: {
 		// Using Node adapter for Railway deployment
 		// https://kit.svelte.dev/docs/adapter-node
-		adapter: adapter()
+		adapter: adapter({
+			// Railway deployment settings
+			out: 'build',
+			precompress: false,
+			envPrefix: ''
+		}),
+		// Add this for Railway deployments
+		csrf: {
+			checkOrigin: false
+		}
 	}
 };
 
