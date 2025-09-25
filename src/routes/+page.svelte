@@ -6,23 +6,21 @@
   let isConnected = false;
   let isSpeaking = false;
   let isProcessing = false;
-  let isListening = false;
   let error = '';
   let statusMessage = 'Ready to connect';
   let conversationHistory: Array<{role: string, content: string, timestamp: Date}> = [];
   let showSettings = false;
-  
-  // Audio elements
+
+  // Audio elements for Deepgram Voice Agent
   let audioContext: AudioContext;
   let audioStream: MediaStream;
   let audioInput: MediaStreamAudioSourceNode;
   let audioOutput: AudioBufferSourceNode;
   let mediaRecorder: MediaRecorder | null = null;
-  
+
   // Deepgram Voice Agent
   let socket: WebSocket | null = null;
-  let sessionId: string | null = null;
-  
+
   // UI State
   let selectedVoice = 'aura-asteria-en';
   let selectedModel = 'nova-3';
@@ -292,113 +290,7 @@
     initAudio();
   });
 
-  function blobToBase64(blob: Blob): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-  }
 
-  async function clearHistory() {
-    const response = await fetch('/api/transcribe', {
-      method: 'POST',
-      headers: {
-        'X-Action': 'clear'
-      }
-    });
-    if (response.ok) {
-      germanText = '';
-      englishResponse = '';
-      germanTranslation = '';
-      languageTip = '';
-    } else {
-      console.error('Failed to clear history.');
-    }
-  }
-
-  async function startConversation() {
-    error = '';
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorder = new MediaRecorder(stream);
-      const audioChunks: Blob[] = [];
-      mediaRecorder.ondataavailable = (event) => {
-        audioChunks.push(event.data);
-      };
-
-      mediaRecorder.onstop = async () => {
-        isLoading = true;
-        statusMessage = 'Transcribing audio...';
-        try {
-          const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-          const response = await fetch('/api/transcribe', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ audio: await blobToBase64(audioBlob), topic: selectedTopic })
-          });
-
-          if (!response.ok) {
-            const errorResult = await response.json();
-            throw new Error(errorResult.message || 'Failed to transcribe audio.');
-          }
-
-          const result = await response.json();
-          console.log('Server response:', result);
-          hasConversationStarted = true;
-          germanText = result.transcription;
-          englishResponse = result.englishText;
-          germanTranslation = result.germanTranslation;
-          languageTip = result.languageTip;
-
-          statusMessage = 'Generating audio response...';
-          const audioResponse = await fetch('/api/speak', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: englishResponse })
-          });
-
-          if (!audioResponse.ok) {
-            throw new Error('Failed to fetch audio for the response.');
-          }
-
-          const responseAudioBlob = await audioResponse.blob();
-          const audioUrl = URL.createObjectURL(responseAudioBlob);
-          const audio = new Audio(audioUrl);
-          audio.play();
-          audio.onended = () => {
-            isLoading = false;
-            statusMessage = '';
-          };
-        } catch (err) {
-          const e = err as Error;
-          console.error(e.message);
-          error = e.message;
-          isLoading = false;
-          statusMessage = '';
-        }
-      };
-
-      mediaRecorder.start();
-      console.log('MediaRecorder started');
-      isListening = true;
-    } catch (err) {
-      const e = err as Error;
-      console.error('Error accessing microphone:', e);
-      error = 'Could not access the microphone. Please ensure you have given permission.';
-    }
-  }
-
-  function stopConversation() {
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-      mediaRecorder.stop();
-      console.log('MediaRecorder stopped');
-    }
-    isListening = false;
-  }
 
   // Send text message to the agent
   async function sendTextToAgent(text: string) {
@@ -699,19 +591,15 @@
             </button>
             <button
               type="button"
-              on:click={toggleListening}
-              class={`p-2 rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${isSpeaking ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}
+              class={`flex items-center justify-center px-4 py-2 rounded-lg font-medium text-white transition-colors duration-200 ${
+                isConnected ? 'bg-green-500 hover:bg-green-600' : 'bg-gray-400 cursor-not-allowed'
+              }`}
               disabled={!isConnected}
             >
-              {#if isSpeaking}
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                </svg>
-              {:else}
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                </svg>
-              {/if}
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M18 3a1 1 0 00-1.196-.98l-10 2A1 1 0 006 5v9.114A4.369 4.369 0 005 14c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V7.82l8-1.6v5.894A4.37 4.37 0 0015 14a4.367 4.367 0 00-1.11-.81L17.073 4H18V3z"/>
+              </svg>
+              Voice Active
             </button>
           </form>
         </div>
