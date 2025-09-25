@@ -4,6 +4,10 @@
 	"version": "0.0.1",
 	"description": "German Language Learning with Real-Time Voice AI - Production Ready Build v2025-09-25-02:22",
 	"type": "module",
+	"engines": {
+		"node": ">=20.0.0",
+		"npm": ">=9.0.0"
+	},
 	"scripts": {
 		"dev": "vite dev",
 		"build": "vite build",
