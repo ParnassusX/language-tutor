@@ -11,21 +11,23 @@ const config = {
 		// Using Node adapter for Railway deployment
 		// https://kit.svelte.dev/docs/adapter-node
 		adapter: adapter({
-			// Railway deployment settings
+			// Railway deployment settings - simplified for Railway
 			out: 'build',
-			precompress: true, // Enable compression for better performance
-			envPrefix: '',
-			// Ensure static files are properly handled
-			preprocess: 'vercel'
+			precompress: false, // Disable precompress for Railway
+			envPrefix: ''
 		}),
-		// Add this for Railway deployments
+		// CSRF protection for Railway
 		csrf: {
-			checkOrigin: process.env.NODE_ENV === 'production' // Only check origin in production
+			checkOrigin: false // Disabled for Railway proxy handling
 		},
-		// Ensure correct paths in production - let Railway handle dynamic URLs
+		// Let Railway handle paths dynamically - no hardcoded paths
 		paths: {
 			assets: '',
 			base: ''
+		},
+		// Ensure client-side assets are served correctly
+		serviceWorker: {
+			register: false
 		}
 	}
 };

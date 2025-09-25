@@ -11,18 +11,35 @@ restartPolicyType = "ON_FAILURE"
 # Environment variables needed for production
 [build.environment]
 NODE_ENV = "production"
-NODE_OPTIONS = "--max-old-space-size=1024"
+NODE_OPTIONS = "--max-old-space-size=1536"  # Increased for voice processing
 NODE_VERSION = "20"
+NIXPACKS_NODE_VERSION = "20"
 
 # Required environment variables that must be set in Railway dashboard
 [deploy.environment]
 NODE_ENV = "production"
 # DEEPGRAM_API_KEY - REQUIRED: Get from https://console.deepgram.com/ and set in Railway Variables
-DEEPGRAM_API_KEY = "your_deepgram_api_key_here"  # ⚠️ REPLACE THIS WITH YOUR ACTUAL KEY IN RAILWAY DASHBOARD!
-# DEEPL_API_KEY - OPTIONAL: For translations, get from https://www.deepl.com/pro-api
-DEEPL_API_KEY = ""
+# ⚠️ ADD YOUR KEY: Set DEEPGRAM_API_KEY in Railway Dashboard Variables section
+# Example: DEEPGRAM_API_KEY: dg_your_real_key_here
 PORT = "3000"
 HOST = "0.0.0.0"
+
+# PERFORMANCE OPTIMIZATIONS FOR REAL-TIME VOICE CALLS
+[deploy.environment]
+# Memory allocation for continuous audio processing and WebRTC sessions
+NODE_OPTIONS = "--max-old-space-size=4096"
+
+# Network optimizations for long WebRTC/WebSocket voice sessions
+[deploy.environment]
+WEBSOCKET_TIMEOUT = "600000"  # 10 minutes for extended German practice sessions
+WEBSOCKET_MAX_CONNECTIONS = "50"   # Optimized for individual learners
+AUDIO_BUFFER_SIZE = "10240"        # Larger buffers for smooth audio streaming
+CONNECTION_POOL_SIZE = "5"          # HTTP connection pooling for API calls
+
+# Voice call optimizations
+[deploy.environment]
+VOICE_SESSION_TIMEOUT = "900000"   # 15 minute voice sessions
+AUDIO_QUALITY = "high"             # High quality German voice synthesis
 
 # Build cache configuration
 [build.cache]

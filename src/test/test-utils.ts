@@ -39,13 +39,12 @@ export function mockMediaDevices() {
  * Creates a test audio blob
  */
 export function createTestAudioBlob(): Blob {
-  const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-  const oscillator = audioContext.createOscillator();
-  const destination = audioContext.createMediaStreamDestination();
-  oscillator.connect(destination);
-  oscillator.start();
-  
-  return new Blob([], { type: 'audio/wav' });
+  // Simplified mock for testing - avoid complex audio context creation
+  const testData = new Uint8Array(1024);
+  for (let i = 0; i < testData.length; i++) {
+    testData[i] = Math.random() * 255;
+  }
+  return new Blob([testData], { type: 'audio/webm' });
 }
 
 /**

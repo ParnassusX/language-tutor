@@ -2,6 +2,7 @@
 	"name": "language-tutor",
 	"private": true,
 	"version": "0.0.1",
+	"description": "German Language Learning with Real-Time Voice AI - Production Ready Build v2025-09-25-02:22",
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
@@ -33,7 +34,6 @@
 	},
 	"dependencies": {
 		"@deepgram/sdk": "^4.7.0",
-		"@google/generative-ai": "^0.24.1",
-		"deepl-node": "^1.19.0"
+		"@google/generative-ai": "^0.24.1"
 	}
 }

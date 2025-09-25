@@ -40,37 +40,33 @@ const GERMAN_TUTOR_CONFIG = {
   },
   "agent": {
     "language": "de",
+    "model": "aura-2-en", // UNIFIED Deepgram Aura 2 - handles both STT and TTS natively
     "speak": {
-      "provider": {
-        "type": "deepgram",
-        "model": "aura-asteria-en" // Latest German voice model
-      },
-      "speed": 1.1, // Slightly faster than normal speech
-      "style": 0.8 // Slightly more expressive
+      "speed": 0.95, // Slightly slower for learning comprehension
+      "style": 0.8 // More expressive for engaging teaching
     },
     "listen": {
-      "provider": {
-        "type": "deepgram",
-        "model": "nova-3" // Latest German transcription model
-      },
-      "endpointing": 400, // End of utterance detection in ms
-      "no_speech_timeout": 2000, // Timeout when no speech is detected
+      "endpointing": 300, // Faster response detection
+      "no_speech_timeout": 2500, // Allow thinking time for learners
       "keywords": [
-        { "word": "Hallo", "boost": 1.5 },
-        { "word": "Danke", "boost": 1.5 },
-        { "word": "Bitte", "boost": 1.5 },
-        { "word": "Wiederholen", "boost": 2.0 },
-        { "word": "Langsamer", "boost": 2.0 },
-        { "word": "Englisch", "boost": 1.5 }
+        { "word": "Hallo", "boost": 1.8 },
+        { "word": "Danke", "boost": 1.8 },
+        { "word": "Bitte", "boost": 1.8 },
+        { "word": "Wiederholen", "boost": 2.5 },
+        { "word": "Langsamer", "boost": 2.5 },
+        { "word": "Englisch", "boost": 2.0 },
+        { "word": "Entschuldigung", "boost": 1.5 }
       ]
     },
-    "think": {
-      "provider": {
-        "type": "openai",
-        "model": "gpt-4o",
-        "temperature": 0.7,
-        "max_tokens": 150
-      },
+  "think": {
+    "provider": {
+      "type": "google",
+      "model": "gemini-1.5-flash",
+      "temperature": 0.7,
+      "max_tokens": 150,
+      "presence_penalty": 0.0,
+      "frequency_penalty": 0.0
+    },
       "prompt": `# Role: German Language Tutor
 
 You are a friendly and patient German language tutor. Your goal is to help users learn German through natural conversation.
@@ -115,36 +111,44 @@ Tutor: Schön, Sie kennenzulernen, [Name]! Woher kommen Sie? (Nice to meet you, 
 };
 
 export const GET = async () => {
-  // Return the Voice Agent configuration
-  // In production, this would generate a live session URL
-
-  console.log('🎯 Voice Agent configuration requested');
+  // Generate a Deepgram session token for Voice Agent WebSocket
+  console.log('🎯 Voice Agent token requested');
 
   try {
-    // Generate a unique session ID
-    const sessionId = crypto.randomUUID();
-    
-    // Return the configuration with the session ID
+    // Create a Deepgram session for Voice Agent
+    const response = await fetch('https://api.deepgram.com/v1/agent/sessions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Token ${DEEPGRAM_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(GERMAN_TUTOR_CONFIG.agent)
+    });
+
+    if (!response.ok) {
+      console.error('Deepgram session creation failed:', response.status, response.statusText);
+      return createErrorResponse(500, 'Failed to create Deepgram session');
+    }
+
+    const sessionData = await response.json();
+    console.log('🎵 Deepgram session created:', sessionData);
+
     return new Response(JSON.stringify({
-      sessionId,
-      config: {
-        ...GERMAN_TUTOR_CONFIG,
-        session: {
-          session_id: sessionId,
-          expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString() // 1 hour expiration
-        }
-      }
+      token: sessionData.token,
+      sessionId: sessionData.session_id,
+      expiresAt: sessionData.expires_at,
+      config: GERMAN_TUTOR_CONFIG
     }), {
       status: 200,
       headers: {
         'Content-Type': 'application/json',
-        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
         'Access-Control-Allow-Origin': '*',
       }
     });
   } catch (error) {
-    console.error('Error generating session:', error);
-    return createErrorResponse(500, 'Failed to generate session');
+    console.error('Error creating Deepgram session:', error);
+    return createErrorResponse(500, 'Failed to create Voice Agent session');
   }
 };
 

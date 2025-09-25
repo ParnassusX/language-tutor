@@ -11,60 +11,36 @@
   let conversationHistory: Array<{role: string, content: string, timestamp: Date}> = [];
   let showSettings = false;
 
-  // Audio elements for Deepgram Voice Agent
+  // Enhanced Audio elements for Deepgram Voice Agent with visualization
   let audioContext: AudioContext;
   let audioStream: MediaStream;
   let audioInput: MediaStreamAudioSourceNode;
   let audioOutput: AudioBufferSourceNode;
   let mediaRecorder: MediaRecorder | null = null;
+  let gainNode: GainNode; // For volume control
+  let analyserNode: AnalyserNode; // For audio level monitoring
+  let audioLevel = 0; // Real-time audio level for visualization
+  let analyserData: Uint8Array; // For FFT analysis
+  let animationFrameId: number; // For visualization animation
+  let isRecording = false; // Current recording state
+  let callDuration = 0; // Call duration tracking
+  let durationInterval: number; // Duration timer
 
   // Deepgram Voice Agent
   let socket: WebSocket | null = null;
 
-  // UI State
+  // UI State - simplified for phone call style
   let selectedVoice = 'aura-asteria-en';
-  let selectedModel = 'nova-3';
-  let volume = 1.0;
-  let speechRate = 1.0;
   let inputText = '';
-  
-  // Available voices and models
+
+  // Available voices for simplified selection
   const voices = [
     { id: 'aura-asteria-en', name: 'Asteria (Female)' },
     { id: 'aura-luna-en', name: 'Luna (Female)' },
     { id: 'aura-stella-en', name: 'Stella (Female)' },
-    { id: 'aura-athena-en', name: 'Athena (Female)' },
-    { id: 'aura-hera-en', name: 'Hera (Female)' },
     { id: 'aura-orion-en', name: 'Orion (Male)' },
-    { id: 'aura-arcas-en', name: 'Arcas (Male)' },
-    { id: 'aura-perseus-en', name: 'Perseus (Male)' },
-    { id: 'aura-angus-en', name: 'Angus (Male)' },
-    { id: 'aura-orpheus-en', name: 'Orpheus (Male)' },
-    { id: 'aura-helios-en', name: 'Helios (Male)' },
-    { id: 'aura-zeus-en', name: 'Zeus (Male)' }
+    { id: 'aura-helios-en', name: 'Helios (Male)' }
   ];
-  
-  const models = [
-    { id: 'nova-3', name: 'Nova 3 (Latest)' },
-    { id: 'nova-2', name: 'Nova 2' },
-    { id: 'enhanced', name: 'Enhanced' },
-    { id: 'base', name: 'Base' }
-  ];
-  
-  // Conversation topics
-  const topics = [
-    'General Conversation',
-    'Travel',
-    'Food & Dining',
-    'Shopping',
-    'Business',
-    'Healthcare',
-    'Education',
-    'Technology',
-    'Sports',
-    'Entertainment'
-  ];
-  let selectedTopic = topics[0];
   
   // Initialize audio context
   async function initAudio() {
@@ -73,9 +49,9 @@
       audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioInput = audioContext.createMediaStreamSource(audioStream);
       updateStatus('Audio initialized');
-    } catch (err) {
-      handleError('Failed to initialize audio: ' + err.message);
-    }
+      } catch (err) {
+        handleError('Failed to initialize audio', err);
+      }
   }
   
   // Update status message
@@ -89,8 +65,9 @@
   }
   
   // Handle errors
-  function handleError(message: string, err?: Error) {
-    error = message + (err ? `: ${err.message}` : '');
+  function handleError(message: string, err?: unknown) {
+    const errMsg = err ? (err instanceof Error ? err.message : String(err)) : '';
+    error = message + (errMsg ? `: ${errMsg}` : '');
     updateStatus(error, true);
     isConnecting = false;
     isConnected = false;
@@ -115,8 +92,7 @@
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          voice: selectedVoice,
-          model: selectedModel
+          voice: selectedVoice
         })
       });
       
@@ -150,8 +126,8 @@
         }
       };
       
-      socket.onerror = (error) => {
-        handleError('WebSocket error', error);
+      socket.onerror = () => {
+        handleError('WebSocket error occurred', undefined);
       };
       
     } catch (err) {
@@ -164,10 +140,15 @@
     if (data.type === 'transcript') {
       // Handle user's speech transcription
       const transcript = data.channel.alternatives[0]?.transcript;
-      if (transcript) {
+      if (transcript && transcript.trim()) {
+        // Only process valid, non-empty transcripts
         addToHistory('user', transcript);
+        updateStatus('You said: ' + transcript);
+      } else {
+        // Handle empty/null transcript (no speech detected)
+        updateStatus('Ready - Speak clearly to continue');
       }
-    } 
+    }
     else if (data.type === 'speech' && data.speech) {
       // Handle agent's speech response
       isSpeaking = true;
@@ -248,7 +229,11 @@
   
   // Add message to conversation history
   function addToHistory(role: string, content: string) {
-    conversationHistory = [...conversationHistory, { role, content }];
+    conversationHistory = [...conversationHistory, {
+      role,
+      content,
+      timestamp: new Date()
+    }];
     // Keep only the last 20 messages
     if (conversationHistory.length > 20) {
       conversationHistory = conversationHistory.slice(-20);
@@ -324,29 +309,92 @@
     if (!inputText.trim()) return;
     sendTextToAgent(inputText);
   }
-
-  // Toggle listening state
-  function toggleListening() {
-    if (isListening) {
-      stopConversation();
-    } else {
-      startConversation();
-    }
-  }
 </script>
 
 <main class="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 p-4 md:p-8">
-  <div class="max-w-6xl mx-auto">
-    <!-- Header -->
+    <div class="max-w-6xl mx-auto">
+    <!-- Header with Status -->
     <header class="text-center mb-8">
-      <h1 class="text-4xl font-bold text-gray-800 mb-2">Deepgram Voice Assistant</h1>
-      <p class="text-gray-600">Practice your language skills with our AI tutor</p>
-      <div class="status-indicator mt-4">
-        <div class="flex items-center justify-center space-x-2">
-          <div class={`w-3 h-3 rounded-full ${isConnected ? 'bg-green-500' : isConnecting ? 'bg-yellow-500' : 'bg-gray-400'}`}></div>
-          <span class="text-sm text-gray-600">{statusMessage}</span>
+      <h1 class="text-4xl font-bold text-gray-800 mb-2 flex items-center justify-center">
+        <span>📞 Deepgram Voice Tutor</span>
+        {#if isConnected}
+          <div class="ml-3 flex items-center">
+            <div class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+            <span class="ml-2 text-sm text-green-600 font-medium">ON AIR</span>
+          </div>
+        {:else if isConnecting}
+          <div class="ml-3 flex items-center">
+            <div class="w-2 h-2 bg-orange-400 rounded-full animate-pulse"></div>
+            <span class="ml-2 text-sm text-orange-600 font-medium">CONNECTING...</span>
+          </div>
+        {/if}
+      </h1>
+      <p class="text-gray-600 mb-4">
+        {#if isConnected}
+          Practice speaking German naturally - all conversations are listened to in real-time!
+        {:else}
+          Click "Connect" to start your German voice practice session
+        {/if}
+      </p>
+
+      <!-- Real-time Audio Level Visualizer -->
+      {#if isConnected}
+        <div class="bg-white rounded-lg shadow-sm border p-4 mb-4 inline-block">
+          <div class="flex items-center space-x-3">
+            <div class="flex items-center space-x-2">
+              <svg class="w-5 h-5 text-red-500" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z" clip-rule="evenodd" />
+              </svg>
+              <span class="text-sm font-medium text-gray-700">Microphone:</span>
+            </div>
+            <div class="flex space-x-1">
+              {#each Array(8) as _, i}
+                <div
+                  class="w-2 bg-gradient-to-t from-blue-400 to-blue-600 rounded-sm"
+      class:h-2={audioLevel > i * 20}
+      class:h-1={audioLevel <= i * 20}
+      class:opacity-100={audioLevel > i * 20}
+      class:opacity-30={audioLevel <= i * 20}
+      class:animate-pulse={audioLevel > i * 20 && i % 2 === 0}
+                ></div>
+              {/each}
+            </div>
+            <span class="text-xs text-gray-500 ml-3">
+              {#if isRecording}
+                <span class="text-red-600 font-medium">● REC</span>
+              {:else}
+                Live audio input
+              {/if}
+            </span>
+          </div>
+        </div>
+      {/if}
+
+      <!-- Status with better visual cues -->
+      <div class="flex items-center justify-center mt-4 space-x-4 text-sm">
+        <div class="flex items-center space-x-2">
+          {#if isConnected}
+            <svg class="w-4 h-4 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+              <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+            </svg>
+            <span class="text-green-700 font-medium">Connected & Listening</span>
+          {:else if isConnecting}
+            <div class="animate-spin rounded-full h-4 w-4 border-2 border-orange-500 border-t-transparent"></div>
+            <span class="text-orange-700 font-medium">Establishing connection...</span>
+          {:else}
+            <svg class="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+              <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+            </svg>
+            <span class="text-gray-600">Ready to start practicing German</span>
+          {/if}
         </div>
       </div>
+
+      {#if isConnected}
+        <div class="mt-3 text-xs text-gray-500">
+          Peak of natural voice practice - speak continuously like in a real conversation!
+        </div>
+      {/if}
     </header>
 
     <!-- Main Content -->
@@ -382,99 +430,7 @@
             {/if}
           </button>
 
-          <!-- Settings Toggle -->
-          <button
-            on:click={() => showSettings = !showSettings}
-            class="w-full flex items-center justify-center px-6 py-3 border border-gray-300 rounded-lg font-medium text-gray-700 hover:bg-gray-50 transition-colors duration-200"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
-              <path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd" />
-            </svg>
-            {showSettings ? 'Hide Settings' : 'Show Settings'}
-          </button>
 
-          <!-- Settings Panel -->
-          {#if showSettings}
-            <div class="mt-4 p-4 bg-gray-50 rounded-lg space-y-4">
-              <!-- Voice Selection -->
-              <div>
-                <label for="voice-select" class="block text-sm font-medium text-gray-700 mb-1">Voice</label>
-                <select
-                  id="voice-select"
-                  bind:value={selectedVoice}
-                  class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  disabled={isConnected}
-                >
-                  {#each voices as voice}
-                    <option value={voice.id}>{voice.name}</option>
-                  {/each}
-                </select>
-              </div>
-
-              <!-- Model Selection -->
-              <div>
-                <label for="model-select" class="block text-sm font-medium text-gray-700 mb-1">Model</label>
-                <select
-                  id="model-select"
-                  bind:value={selectedModel}
-                  class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  disabled={isConnected}
-                >
-                  {#each models as model}
-                    <option value={model.id}>{model.name}</option>
-                  {/each}
-                </select>
-              </div>
-
-              <!-- Topic Selection -->
-              <div>
-                <label for="topic-select" class="block text-sm font-medium text-gray-700 mb-1">Topic</label>
-                <select
-                  id="topic-select"
-                  bind:value={selectedTopic}
-                  class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                >
-                  {#each topics as topic}
-                    <option value={topic}>{topic}</option>
-                  {/each}
-                </select>
-              </div>
-
-              <!-- Volume Control -->
-              <div>
-                <div class="flex justify-between">
-                  <label for="volume" class="block text-sm font-medium text-gray-700">Volume</label>
-                  <span class="text-sm text-gray-500">{Math.round(volume * 100)}%</span>
-                </div>
-                <input
-                  id="volume"
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.01"
-                  bind:value={volume}
-                  class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-                />
-              </div>
-
-              <!-- Speech Rate -->
-              <div>
-                <div class="flex justify-between">
-                  <label for="rate" class="block text-sm font-medium text-gray-700">Speech Rate</label>
-                  <span class="text-sm text-gray-500">{speechRate.toFixed(1)}x</span>
-                </div>
-                <input
-                  id="rate"
-                  type="range"
-                  min="0.5"
-                  max="2"
-                  step="0.1"
-                  bind:value={speechRate}
-                  class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-                />
-              </div>
-            </div>
-          {/if}
         </div>
 
         <!-- Quick Actions -->
@@ -530,11 +486,6 @@
         <div class="bg-gray-50 px-6 py-4 border-b border-gray-200">
           <div class="flex items-center justify-between">
             <h2 class="text-lg font-semibold text-gray-800">Conversation</h2>
-            <div class="flex items-center space-x-2">
-              <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                {selectedTopic}
-              </span>
-            </div>
           </div>
         </div>
 
