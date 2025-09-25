@@ -11,7 +11,6 @@ restartPolicyType = "ON_FAILURE"
 # Environment variables needed for production
 [build.environment]
 NODE_ENV = "production"
-NODE_OPTIONS = "--max-old-space-size=1536"  # Increased for voice processing
 NODE_VERSION = "20"
 NIXPACKS_NODE_VERSION = "20"
 
@@ -25,22 +24,14 @@ PORT = "3000"
 HOST = "0.0.0.0"
 
 # PERFORMANCE OPTIMIZATIONS FOR REAL-TIME VOICE CALLS
-[deploy.environment]
-# Memory allocation for continuous audio processing and WebRTC sessions
-NODE_OPTIONS = "--max-old-space-size=4096"
+NODE_OPTIONS = "--max-old-space-size=4096"         # 4GB memory for voice processing
+WEBSOCKET_TIMEOUT = "600000"                       # 10 minutes sustained connections
+WEBSOCKET_MAX_CONNECTIONS = "50"                   # Individual learners optimized
+AUDIO_BUFFER_SIZE = "10240"                        # Smooth audio streaming buffers
+CONNECTION_POOL_SIZE = "5"                         # HTTP connection pooling
+VOICE_SESSION_TIMEOUT = "900000"                   # 15 minute voice practice
+AUDIO_QUALITY = "high"                             # Professional German synthesis
 
-# Network optimizations for long WebRTC/WebSocket voice sessions
-[deploy.environment]
-WEBSOCKET_TIMEOUT = "600000"  # 10 minutes for extended German practice sessions
-WEBSOCKET_MAX_CONNECTIONS = "50"   # Optimized for individual learners
-AUDIO_BUFFER_SIZE = "10240"        # Larger buffers for smooth audio streaming
-CONNECTION_POOL_SIZE = "5"          # HTTP connection pooling for API calls
-
-# Voice call optimizations
-[deploy.environment]
-VOICE_SESSION_TIMEOUT = "900000"   # 15 minute voice sessions
-AUDIO_QUALITY = "high"             # High quality German voice synthesis
-
-# Build cache configuration
+# Build cache configuration - optimizes subsequent deployments
 [build.cache]
 directories = ["node_modules"]
