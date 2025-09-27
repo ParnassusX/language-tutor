@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>German Tutor - Basic Test</title>
+    <style>
+        body { font-family: Arial; padding: 20px; background: #f0f0f0; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; }
+        .status { color: blue; font-weight: bold; margin: 10px 0; }
+        .success { color: green; }
+        .error { color: red; }
+        button { padding: 10px 20px; margin: 5px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        input, textarea { width: 100%; padding: 8px; margin: 5px 0; border: 1px solid #ccc; border-radius: 4px; }
+        .message { padding: 8px; margin: 5px 0; border-radius: 4px; }
+        .user { background: #e3f2fd; }
+        .ai { background: #f3e5f5; }
+        .system { background: #fff3e0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🗣️ German Tutor - Basic Test</h1>
+        <div id="status" class="status">Loading...</div>
+
+        <button onclick="testAPI()">Test API Connection</button>
+        <button onclick="clearMessages()">Clear Messages</button>
+
+        <h2>API Response:</h2>
+        <textarea id="apiResponse" readonly rows="10"></textarea>
+
+        <h2>Conversation:</h2>
+        <div id="messages"></div>
+
+        <form onsubmit="sendMessage(event)">
+            <input type="text" id="messageInput" placeholder="Type a message...">
+            <button type="submit">Send</button>
+        </form>
+    </div>
+
+    <script>
+        function setStatus(msg, type = 'info') {
+            document.getElementById('status').textContent = msg;
+            document.getElementById('status').className = `status ${type}`;
+        }
+
+        function addMessage(text, type = 'system') {
+            const div = document.createElement('div');
+            div.className = `message ${type}`;
+            div.textContent = `[${new Date().toLocaleTimeString()}] ${text}`;
+            document.getElementById('messages').appendChild(div);
+        }
+
+        function testAPI() {
+            setStatus('Testing API connection...');
+
+            fetch('/api/voice-agent')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('apiResponse').value = JSON.stringify(data, null, 2);
+                    setStatus('✅ API Connected Successfully!', 'success');
+                    addMessage('Backend API is working correctly');
+
+                    if (data.message) {
+                        addMessage(`API Message: ${data.message}`, 'system');
+                    }
+                })
+                .catch(error => {
+                    document.getElementById('apiResponse').value = `Error: ${error.message}`;
+                    console.error('API test failed:', error);
+                    setStatus('❌ API Connection Failed', 'error');
+                    addMessage(`Connection error: ${error.message}`, 'system');
+                });
+        }
+
+        function sendMessage(event) {
+            event.preventDefault();
+            const input = document.getElementById('messageInput');
+            const text = input.value.trim();
+
+            if (!text) return;
+
+            addMessage(`You: ${text}`, 'user');
+            input.value = '';
+
+            // Simulate AI response
+            setTimeout(() => {
+                let response = 'Das klingt gut! ';
+
+                if (text.toLowerCase().includes('hallo')) {
+                    response += 'Ich freue mich, dich kennenzulernen!';
+                } else if (text.toLowerCase().includes('gut')) {
+                    response += 'Das ist wunderbar zu hören!';
+                } else {
+                    response += 'Erzähl mir mehr davon!';
+                }
+
+                addMessage(`AI Teacher: ${response}`, 'ai');
+            }, 1000);
+        }
+
+        function clearMessages() {
+            document.getElementById('messages').innerHTML = '';
+            document.getElementById('apiResponse').value = '';
+            setStatus('Messages cleared');
+        }
+
+        // Auto-test API on load
+        setTimeout(() => {
+            testAPI();
+        }, 500);
+    </script>
+</body>
+</html>

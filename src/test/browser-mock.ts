@@ -12,6 +12,8 @@ export const page = {
   }
 };
 
+import { vi } from 'vitest';
+
 // Mock for $app/navigation
 export const goto = vi.fn();
 export const invalidate = vi.fn();

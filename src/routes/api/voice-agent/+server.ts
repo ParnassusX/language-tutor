@@ -1,13 +1,9 @@
 // This endpoint provides connection details for Deepgram Voice Agents
 // Based on Deepgram's official Voice Agent playground examples
 
-import { DEEPGRAM_API_KEY } from '$env/static/private';
+import { env } from '$env/dynamic/private';
 
-// Validate environment variables
-if (!DEEPGRAM_API_KEY) {
-  console.error('DEEPGRAM_API_KEY is not set in environment variables');
-  throw new Error('Server configuration error: Missing required API key');
-}
+// We'll validate environment variables inside the endpoints where needed
 
 // Helper function to create error responses
 function createErrorResponse(status: number, message: string) {
@@ -110,45 +106,62 @@ Tutor: Schön, Sie kennenzulernen, [Name]! Woher kommen Sie? (Nice to meet you, 
   }
 };
 
-export const GET = async () => {
-  // Generate a Deepgram session token for Voice Agent WebSocket
-  console.log('🎯 Voice Agent token requested');
+export const GET = async (request) => {
+  // Check if user requests transcription-only mode
+  const url = new URL(request.url);
+  const mode = url.searchParams.get('mode') || 'voice-agent';
+
+  console.log(`🎯 ${mode === 'transcription' ? 'Transcription-only' : 'Voice Agent'} configuration requested`);
 
   try {
-    // Create a Deepgram session for Voice Agent
-    const response = await fetch('https://api.deepgram.com/v1/agent/sessions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Token ${DEEPGRAM_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(GERMAN_TUTOR_CONFIG.agent)
-    });
-
-    if (!response.ok) {
-      console.error('Deepgram session creation failed:', response.status, response.statusText);
-      return createErrorResponse(500, 'Failed to create Deepgram session');
+    if (mode === 'transcription') {
+      // Fallback mode for transcription only (works even without Voice Agent)
+      return new Response(JSON.stringify({
+        status: 'success',
+        mode: 'transcription',
+        token: env.DEEPGRAM_API_KEY,
+        message: 'Transcription-only mode ready (Voice Agent not enabled)',
+        websocketUrl: 'wss://api.deepgram.com/v1/listen',
+        config: {
+          language: 'de',
+          model: 'nova-2',  // Use standard transcription model
+          smart_format: true,
+          punctuate: true,
+          interim_results: true
+        },
+        fallbackMode: true,
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+      }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-store, no-cache, must-revalidate',
+          'Access-Control-Allow-Origin': '*',
+        }
+      });
+    } else {
+      // Primary Voice Agent mode
+      return new Response(JSON.stringify({
+        status: 'success',
+        mode: 'voice-agent',
+        token: env.DEEPGRAM_API_KEY,  // Use API key directly as token for WebSocket auth
+        message: 'Voice Agent ready for WebSocket connection',
+        websocketUrl: 'wss://api.deepgram.com/v1/listen/agent',
+        config: GERMAN_TUTOR_CONFIG.agent,
+        fallbackUrl: `http://localhost:5173/api/voice-agent?mode=transcription`,
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() // 24 hour expiration
+      }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-store, no-cache, must-revalidate',
+          'Access-Control-Allow-Origin': '*',
+        }
+      });
     }
-
-    const sessionData = await response.json();
-    console.log('🎵 Deepgram session created:', sessionData);
-
-    return new Response(JSON.stringify({
-      token: sessionData.token,
-      sessionId: sessionData.session_id,
-      expiresAt: sessionData.expires_at,
-      config: GERMAN_TUTOR_CONFIG
-    }), {
-      status: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        'Cache-Control': 'no-store, no-cache, must-revalidate',
-        'Access-Control-Allow-Origin': '*',
-      }
-    });
   } catch (error) {
-    console.error('Error creating Deepgram session:', error);
-    return createErrorResponse(500, 'Failed to create Voice Agent session');
+    console.error('Error generating Voice Agent config:', error);
+    return createErrorResponse(500, 'Failed to generate Voice Agent configuration');
   }
 };
 

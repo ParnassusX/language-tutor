@@ -1,10 +1,14 @@
 import type { RequestHandler } from './$types';
 import { createClient } from '@deepgram/sdk';
-import { DEEPGRAM_API_KEY } from '$env/static/private';
-
-const deepgram = createClient(DEEPGRAM_API_KEY);
+import { env } from '$env/dynamic/private';
 
 export const POST: RequestHandler = async ({ request }) => {
+  const DEEPGRAM_API_KEY = env.DEEPGRAM_API_KEY;
+
+  if (!DEEPGRAM_API_KEY) {
+    return new Response('Deepgram API key not configured', { status: 500 });
+  }
+
   const { text } = await request.json();
 
   if (!text) {
@@ -12,6 +16,8 @@ export const POST: RequestHandler = async ({ request }) => {
   }
 
   try {
+    const deepgram = createClient(DEEPGRAM_API_KEY);
+
     const response = await deepgram.speak.request(
       { text },
       {

@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 import { render, fireEvent, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import type { ComponentType } from 'svelte';

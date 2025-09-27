@@ -1,18 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
-import {
-	DEEPGRAM_API_KEY,
-	DEEPL_API_KEY,
-	GEMINI_API_KEY,
-	ADMIN_PASSWORD
-} from '$env/static/private';
 import { env } from '$env/dynamic/private';
 import { dev } from '$app/environment';
-
-// Default values for Railway deployment (Vercel variables not needed)
-const VERCEL_TOKEN_VALUE = env.VERCEL_TOKEN || '';
-const VERCEL_PROJECT_ID_VALUE = env.VERCEL_PROJECT_ID || '';
-const VERCEL_TEAM_ID_VALUE = env.VERCEL_TEAM_ID || '';
 
 export const load: PageServerLoad = ({ cookies }) => {
 	const sessionCookie = cookies.get('session');
@@ -25,10 +14,15 @@ export const load: PageServerLoad = ({ cookies }) => {
 		};
 	}
 
-	const maskKey = (key: string) => {
+	const maskKey = (key?: string): string => {
 		if (!key || key.includes('_HERE')) return 'Not set';
 		return `...${key.slice(-4)}`;
 	};
+
+	// Access environment variables at runtime
+	const DEEPGRAM_API_KEY = env.DEEPGRAM_API_KEY;
+	const DEEPL_API_KEY = env.DEEPL_API_KEY;
+	const GEMINI_API_KEY = env.GEMINI_API_KEY;
 
 	return {
 		session,
@@ -45,6 +39,7 @@ export const actions: Actions = {
 		const data = await request.formData();
 		const password = data.get('password');
 
+		const ADMIN_PASSWORD = env.ADMIN_PASSWORD;
 		if (password !== ADMIN_PASSWORD) {
 			return fail(401, { error: 'Invalid password.' });
 		}
@@ -82,43 +77,14 @@ export const actions: Actions = {
 			return fail(400, { error: 'No keys to update.' });
 		}
 
-		if (dev) {
-			return {
-				message: `Received keys to update (local only): ${keysToUpdate
-					.map((k) => k.name)
-					.join(', ')}. Please update your .env file and restart the server.`
-			};
-		}
+		// Railway deployment - cannot dynamically update environment variables
+		// Must be done manually in Railway dashboard
+		return {
+			message: `Railway Deployment: Environment variables cannot be updated dynamically. Please update the following keys in your Railway project dashboard (Variables tab):
 
-		try {
-			for (const key of keysToUpdate) {
-				const response = await fetch(
-					`https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID_VALUE}/env?teamId=${VERCEL_TEAM_ID_VALUE}`,
-					{
-						method: 'POST',
-						headers: {
-							Authorization: `Bearer ${VERCEL_TOKEN_VALUE}`,
-							'Content-Type': 'application/json'
-						},
-						body: JSON.stringify({
-							key: key.name,
-							value: key.value,
-							type: 'encrypted',
-							target: ['production', 'preview', 'development']
-						})
-					}
-				);
+${keysToUpdate.map(k => `• ${k.name}`).join('\n')}
 
-				if (!response.ok) {
-					const errorData = await response.json();
-					return fail(response.status, {
-						error: `Failed to update ${key.name}: ${errorData.error.message}`
-					});
-				}
-			}
-			return { message: 'API keys updated successfully. Changes may take a moment to apply.' };
-		} catch (error) {
-			return fail(500, { error: 'An unexpected error occurred.' });
-		}
+After updating, redeploy your application for changes to take effect.`
+		};
 	}
 };

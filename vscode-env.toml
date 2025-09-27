@@ -1,0 +1,13 @@
+# Force Railway to use Node.js 20 explicitly
+[build]
+builder = "NIXPACKS"
+
+[build.environment]
+NODE_VERSION = "20"
+NIXPACKS_NODE_VERSION = "20"
+
+[deploy.environment]
+NODE_VERSION = "20"
+NIXPACKS_NODE_VERSION = "20"
+ENGINES_NODE = "20"
+NODE_ENV = "production"

@@ -1,7 +1,10 @@
 [build]
 builder = "NIXPACKS"
-# Force Node.js 20 for cssstyle@5.3.1 compatibility (requires Node >=20)
 buildCommand = "npm install && npm run build"
+
+# Build cache for faster deployments
+[build.cache]
+directories = ["node_modules"]
 
 [deploy]
 startCommand = "node build/index.js"
@@ -9,26 +12,16 @@ healthcheckPath = "/"
 healthcheckTimeout = 30
 restartPolicyType = "ON_FAILURE"
 
-# Environment variables needed for production
+# BASIC CONFIGURATION
 [build.environment]
 NODE_ENV = "production"
 
-# Required environment variables that must be set in Railway dashboard
 [deploy.environment]
 NODE_ENV = "production"
-
-# FORCE NODE.JS 20 UPGRADE - RESOLVES CSSSTYLE COMPATIBILITY ERROR
-NODE_VERSION = "20"
-NIXPACKS_NODE_VERSION = "20"
-ENGINES_NODE = "20"
-
-# DEEPGRAM_API_KEY - REQUIRED: Get from https://console.deepgram.com/ and set in Railway Variables
-# ⚠️ ADD YOUR KEY: Set DEEPGRAM_API_KEY in Railway Dashboard Variables section
-# Example: DEEPGRAM_API_KEY: dg_your_real_key_here
 PORT = "3000"
 HOST = "0.0.0.0"
 
-# PERFORMANCE OPTIMIZATIONS FOR REAL-TIME VOICE CALLS
+# MEMORY & PERFORMANCE OPTIMIZATION FOR VOICE CALLS
 NODE_OPTIONS = "--max-old-space-size=4096"         # 4GB memory for voice processing
 WEBSOCKET_TIMEOUT = "600000"                       # 10 minutes sustained connections
 WEBSOCKET_MAX_CONNECTIONS = "50"                   # Individual learners optimized
@@ -37,6 +30,8 @@ CONNECTION_POOL_SIZE = "5"                         # HTTP connection pooling
 VOICE_SESSION_TIMEOUT = "900000"                   # 15 minute voice practice
 AUDIO_QUALITY = "high"                             # Professional German synthesis
 
-# Build cache configuration - optimizes subsequent deployments
-[build.cache]
-directories = ["node_modules"]
+# ⚠️  CRITICAL: Set these in Railway Variables (Dashboard > Variables section)
+# DEEPGRAM_API_KEY = "Get your key from https://console.deepgram.com/"
+# DEEPL_API_KEY = "Optional - from https://www.deepl.com/"
+# GEMINI_API_KEY = "Optional fallback - from https://makersuite.google.com/"
+# ADMIN_PASSWORD = "Secure admin password for /admin"

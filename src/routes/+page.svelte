@@ -1,681 +1,334 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
-  
-  // State management
-  let isConnecting = false;
-  let isConnected = false;
-  let isSpeaking = false;
-  let isProcessing = false;
-  let error = '';
-  let statusMessage = 'Ready to connect';
-  let conversationHistory: Array<{role: string, content: string, timestamp: Date}> = [];
-  let showSettings = false;
+  // Based on Deepgram Voice Agent documentation
+  // https://docs.deepgram.com/reference/voice-agent
+  import { onMount } from 'svelte';
 
-  // Enhanced Audio elements for Deepgram Voice Agent with visualization
-  let audioContext: AudioContext;
-  let audioStream: MediaStream;
-  let audioInput: MediaStreamAudioSourceNode;
-  let audioOutput: AudioBufferSourceNode;
-  let mediaRecorder: MediaRecorder | null = null;
-  let gainNode: GainNode; // For volume control
-  let analyserNode: AnalyserNode; // For audio level monitoring
-  let audioLevel = 0; // Real-time audio level for visualization
-  let analyserData: Uint8Array; // For FFT analysis
-  let animationFrameId: number; // For visualization animation
-  let isRecording = false; // Current recording state
-  let callDuration = 0; // Call duration tracking
-  let durationInterval: number; // Duration timer
+  // Types for better type safety
+  interface Message {
+    text: string;
+    type: 'user' | 'system' | 'ai';
+    timestamp: Date;
+  }
 
-  // Deepgram Voice Agent
+  // State with proper types
+  let status: string = 'Disconnected';
+  let isConnected: boolean = false;
+  let messages: Message[] = [];
   let socket: WebSocket | null = null;
+  let audioContext: AudioContext | null = null;
+  let micStream: MediaStream | null = null;
+  let recorder: MediaRecorder | null = null;
+  let isRecording: boolean = false;
 
-  // UI State - simplified for phone call style
-  let selectedVoice = 'aura-asteria-en';
-  let inputText = '';
-
-  // Available voices for simplified selection
-  const voices = [
-    { id: 'aura-asteria-en', name: 'Asteria (Female)' },
-    { id: 'aura-luna-en', name: 'Luna (Female)' },
-    { id: 'aura-stella-en', name: 'Stella (Female)' },
-    { id: 'aura-orion-en', name: 'Orion (Male)' },
-    { id: 'aura-helios-en', name: 'Helios (Male)' }
-  ];
-  
-  // Initialize audio context
-  async function initAudio() {
-    try {
-      audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-      audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      audioInput = audioContext.createMediaStreamSource(audioStream);
-      updateStatus('Audio initialized');
-      } catch (err) {
-        handleError('Failed to initialize audio', err);
-      }
-  }
-  
-  // Update status message
-  function updateStatus(message: string, isError = false) {
-    statusMessage = message;
-    if (isError) {
-      console.error(message);
-    } else {
-      console.log(message);
-    }
-  }
-  
-  // Handle errors
-  function handleError(message: string, err?: unknown) {
-    const errMsg = err ? (err instanceof Error ? err.message : String(err)) : '';
-    error = message + (errMsg ? `: ${errMsg}` : '');
-    updateStatus(error, true);
-    isConnecting = false;
-    isConnected = false;
-    if (socket) {
-      socket.close();
-      socket = null;
-    }
-  }
-  
-  // Connect to Deepgram Voice Agent
-  async function connectToAgent() {
-    if (isConnecting || isConnected) return;
-    
-    isConnecting = true;
-    updateStatus('Connecting to voice agent...');
-    
-    try {
-      // Get a session token from our server
-      const response = await fetch('/api/voice-agent', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          voice: selectedVoice
-        })
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Server responded with ${response.status}`);
-      }
-      
-      const { token } = await response.json();
-      
-      // Create WebSocket connection
-      socket = new WebSocket(`wss://api.deepgram.com/v1/listen/agent?token=${token}`);
-      
-      socket.onopen = () => {
-        updateStatus('Connected to voice agent');
-        isConnecting = false;
-        isConnected = true;
-        startAudioCapture();
-      };
-      
-      socket.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        handleAgentMessage(data);
-      };
-      
-      socket.onclose = (event) => {
-        updateStatus('Disconnected from voice agent');
-        isConnected = false;
-        stopAudioCapture();
-        if (event.code !== 1000) {
-          handleError(`Connection closed with code ${event.code}: ${event.reason}`);
-        }
-      };
-      
-      socket.onerror = () => {
-        handleError('WebSocket error occurred', undefined);
-      };
-      
-    } catch (err) {
-      handleError('Failed to connect to voice agent', err);
-    }
-  }
-  
-  // Handle messages from the agent
-  function handleAgentMessage(data: any) {
-    if (data.type === 'transcript') {
-      // Handle user's speech transcription
-      const transcript = data.channel.alternatives[0]?.transcript;
-      if (transcript && transcript.trim()) {
-        // Only process valid, non-empty transcripts
-        addToHistory('user', transcript);
-        updateStatus('You said: ' + transcript);
-      } else {
-        // Handle empty/null transcript (no speech detected)
-        updateStatus('Ready - Speak clearly to continue');
-      }
-    }
-    else if (data.type === 'speech' && data.speech) {
-      // Handle agent's speech response
-      isSpeaking = true;
-      updateStatus('Agent is speaking...');
-      
-      // Convert base64 audio to ArrayBuffer
-      const audioData = Uint8Array.from(atob(data.speech), c => c.charCodeAt(0));
-      
-      // Play the audio
-      audioContext.decodeAudioData(audioData.buffer, (buffer) => {
-        audioOutput = audioContext.createBufferSource();
-        audioOutput.buffer = buffer;
-        audioOutput.connect(audioContext.destination);
-        audioOutput.onended = () => {
-          isSpeaking = false;
-          updateStatus('Ready');
-        };
-        audioOutput.start(0);
-      });
-      
-      // Add agent's response to chat
-      if (data.text) {
-        addToHistory('assistant', data.text);
-      }
-    }
-    else if (data.type === 'error') {
-      handleError(`Agent error: ${data.message}`);
-    }
-  }
-  
-  // Start capturing audio from microphone
-  function startAudioCapture() {
-    if (!audioStream) {
-      handleError('Audio stream not initialized');
-      return;
-    }
-    
-    const audioOptions = {
-      mimeType: 'audio/webm;codecs=opus',
-      audioBitsPerSecond: 128000
-    };
-    
-    try {
-      mediaRecorder = new MediaRecorder(audioStream, audioOptions);
-      
-      mediaRecorder.ondataavailable = async (event) => {
-        if (event.data.size > 0 && socket?.readyState === WebSocket.OPEN) {
-          const arrayBuffer = await event.data.arrayBuffer();
-          socket.send(arrayBuffer);
-        }
-      };
-      
-      // Send audio data in chunks
-      mediaRecorder.start(100);
-      updateStatus('Listening...');
-      
-    } catch (err) {
-      handleError('Failed to start audio capture', err);
-    }
-  }
-  
-  // Stop audio capture
-  function stopAudioCapture() {
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-      mediaRecorder.stop();
-    }
-    
-    if (audioStream) {
-      audioStream.getTracks().forEach(track => track.stop());
-    }
-    
-    if (audioOutput) {
-      audioOutput.stop();
-    }
-    
-    updateStatus('Audio capture stopped');
-  }
-  
-  // Add message to conversation history
-  function addToHistory(role: string, content: string) {
-    conversationHistory = [...conversationHistory, {
-      role,
-      content,
+  function addMessage(text: string, type: 'user' | 'system' | 'ai' = 'system'): void {
+    messages = [...messages, {
+      text,
+      type,
       timestamp: new Date()
     }];
-    // Keep only the last 20 messages
-    if (conversationHistory.length > 20) {
-      conversationHistory = conversationHistory.slice(-20);
+    console.log(`[${new Date().toLocaleTimeString()}] ${type.toUpperCase()}:`, text);
+  }
+
+  async function initAudio(): Promise<void> {
+    try {
+      addMessage('Initializing audio...');
+      audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+
+      if (audioContext.state === 'suspended') {
+        await audioContext.resume();
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      micStream = stream;
+      addMessage('Microphone access granted');
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown audio error');
+      addMessage('Audio initialization failed: ' + err.message);
     }
   }
-  
-  // Toggle connection to voice agent
-  function toggleConnection() {
+
+  async function toggleConnection(): Promise<void> {
     if (isConnected) {
       disconnect();
     } else {
-      connectToAgent();
+      await connect();
     }
   }
-  
-  // Disconnect from voice agent
-  function disconnect() {
+
+  async function getSecureToken(): Promise<string> {
+    try {
+      const response = await fetch('/api/voice-agent');
+      if (!response.ok) {
+        throw new Error(`Failed to get token: ${response.status}`);
+      }
+      const data = await response.json();
+      return data.token;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown token error');
+      addMessage(`Failed to get secure token: ${err.message}`);
+      throw err;
+    }
+  }
+
+  async function connect(): Promise<void> {
+    if (!audioContext) {
+      await initAudio();
+    }
+
+    try {
+      status = 'Connecting...';
+      addMessage('Connecting to Voice Agent...');
+
+      // Get secure token from server instead of hardcoding
+      const token = await getSecureToken();
+
+      // Deepgram Voice Agent WebSocket connection
+      const wsUrl = `wss://api.deepgram.com/v1/listen/agent?token=${token}`;
+      socket = new WebSocket(wsUrl);
+
+      socket.onopen = () => {
+        status = 'Connected';
+        isConnected = true;
+        addMessage('WebSocket connected to Deepgram Voice Agent');
+
+        // Send Settings as first message (per Deepgram docs)
+        const settings = {
+          type: 'Settings',
+          language: 'en-us',
+          model: 'aura-2-en',
+          speak: {
+            speed: 0.9,
+            style: 0.5
+          },
+          listen: {
+            endpointing: 300,
+            no_speech_timeout: 2500
+          },
+          think: {
+            provider: {
+              type: 'open_ai',
+              model: 'gpt-4o-mini',
+              temperature: 0.7,
+              max_tokens: 150
+            },
+            prompt: `You are a helpful German language tutor. Respond only in German unless the user specifically asks for English. Keep responses conversational and encouraging.`
+          }
+        };
+
+        if (socket) {
+          socket.send(JSON.stringify(settings));
+        }
+        addMessage('Voice Agent settings sent');
+      };
+
+      socket.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+
+          if (data.type === 'transcription') {
+            const transcript = data.channel.alternatives[0]?.transcript;
+            if (transcript) {
+              addMessage(transcript, 'user');
+            }
+          } else if (data.type === 'speech' && data.speech) {
+            addMessage('AI is speaking...', 'ai');
+            console.log('Received AI speech:', data.speech); // Could play audio here
+          } else if (data.type === 'error') {
+            addMessage('Error: ' + data.message, 'system');
+          } else {
+            console.log('Unhandled message type:', data.type, data);
+          }
+        } catch (error) {
+          console.log('Raw message:', event.data);
+        }
+      };
+
+      socket.onclose = () => {
+        disconnect();
+        addMessage('Voice Agent disconnected');
+      };
+
+      socket.onerror = (error) => {
+        status = 'Connection Error';
+        isConnected = false;
+        addMessage('WebSocket error occurred');
+        console.error('WebSocket error:', error);
+      };
+
+    } catch (error) {
+      status = 'Connection Failed';
+      const err = error instanceof Error ? error : new Error('Unknown connection error');
+      addMessage('Failed to connect: ' + err.message);
+    }
+  }
+
+  function disconnect(): void {
     if (socket) {
       socket.close();
       socket = null;
     }
-    
-    stopAudioCapture();
+    if (isRecording) {
+      stopRecording();
+    }
+    status = 'Disconnected';
     isConnected = false;
-    isConnecting = false;
-    updateStatus('Disconnected');
+    addMessage('Disconnected from Voice Agent');
   }
-  
-  // Clean up on component destroy
-  onDestroy(() => {
-    disconnect();
-    if (audioContext) {
-      audioContext.close();
+
+  function startRecording(): void {
+    if (!isConnected || !micStream) {
+      addMessage('Not connected or no microphone access');
+      return;
     }
-  });
-  
-  // Initialize audio when component mounts
-  onMount(() => {
-    initAudio();
-  });
 
-
-
-  // Send text message to the agent
-  async function sendTextToAgent(text: string) {
-    if (!isConnected || !socket) return;
-    
     try {
-      // Add user message to history
-      addToHistory('user', text);
-      
-      // Send text message to the agent
-      socket.send(JSON.stringify({
-        type: 'text',
-        text: text,
-        timestamp: new Date().toISOString()
-      }));
-      
-      // Clear input
-      inputText = '';
-    } catch (err) {
-      handleError('Failed to send message', err as Error);
+      const mediaRecorder = new MediaRecorder(micStream, {
+        mimeType: 'audio/webm;codecs=opus'
+      });
+
+      const chunks: Blob[] = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          chunks.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        if (chunks.length > 0 && socket && socket.readyState === WebSocket.OPEN) {
+          // Combine chunks and send as ArrayBuffer
+          const blob = new Blob(chunks, { type: 'audio/webm' });
+          blob.arrayBuffer().then(buffer => {
+            if (socket && socket.readyState === WebSocket.OPEN) {
+              socket.send(buffer);
+              addMessage('Audio sent to Voice Agent');
+            }
+          });
+        }
+      };
+
+      // Start recording
+      mediaRecorder.start();
+      recorder = mediaRecorder;
+      isRecording = true;
+
+      addMessage('Started recording - speak now...');
+
+      // Stop after 5 seconds (for demo)
+      setTimeout(() => {
+        if (isRecording) {
+          stopRecording();
+        }
+      }, 5000);
+
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown recording error');
+      addMessage('Failed to start recording: ' + err.message);
     }
   }
 
-  // Clear the conversation history
-  function clearConversation() {
-    conversationHistory = [];
+  function stopRecording(): void {
+    if (recorder && recorder.state === 'recording') {
+      recorder.stop();
+      recorder = null;
+      isRecording = false;
+      addMessage('Stopped recording');
+    }
   }
 
-  // Handle text form submission
-  function handleTextSubmit() {
-    if (!inputText.trim()) return;
-    sendTextToAgent(inputText);
-  }
+  onMount(async () => {
+    addMessage('App loaded - Voice Agent Demo');
+  });
 </script>
 
-<main class="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 p-4 md:p-8">
-    <div class="max-w-6xl mx-auto">
-    <!-- Header with Status -->
+<!-- Deepgram Voice Agent - Based on Official Docs -->
+<main class="min-h-screen bg-slate-900 p-6">
+  <div class="max-w-4xl mx-auto">
+
+    <!-- Header -->
     <header class="text-center mb-8">
-      <h1 class="text-4xl font-bold text-gray-800 mb-2 flex items-center justify-center">
-        <span>📞 Deepgram Voice Tutor</span>
-        {#if isConnected}
-          <div class="ml-3 flex items-center">
-            <div class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-            <span class="ml-2 text-sm text-green-600 font-medium">ON AIR</span>
-          </div>
-        {:else if isConnecting}
-          <div class="ml-3 flex items-center">
-            <div class="w-2 h-2 bg-orange-400 rounded-full animate-pulse"></div>
-            <span class="ml-2 text-sm text-orange-600 font-medium">CONNECTING...</span>
-          </div>
-        {/if}
-      </h1>
-      <p class="text-gray-600 mb-4">
-        {#if isConnected}
-          Practice speaking German naturally - all conversations are listened to in real-time!
-        {:else}
-          Click "Connect" to start your German voice practice session
-        {/if}
-      </p>
-
-      <!-- Real-time Audio Level Visualizer -->
-      {#if isConnected}
-        <div class="bg-white rounded-lg shadow-sm border p-4 mb-4 inline-block">
-          <div class="flex items-center space-x-3">
-            <div class="flex items-center space-x-2">
-              <svg class="w-5 h-5 text-red-500" fill="currentColor" viewBox="0 0 20 20">
-                <path fill-rule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z" clip-rule="evenodd" />
-              </svg>
-              <span class="text-sm font-medium text-gray-700">Microphone:</span>
-            </div>
-            <div class="flex space-x-1">
-              {#each Array(8) as _, i}
-                <div
-                  class="w-2 bg-gradient-to-t from-blue-400 to-blue-600 rounded-sm"
-      class:h-2={audioLevel > i * 20}
-      class:h-1={audioLevel <= i * 20}
-      class:opacity-100={audioLevel > i * 20}
-      class:opacity-30={audioLevel <= i * 20}
-      class:animate-pulse={audioLevel > i * 20 && i % 2 === 0}
-                ></div>
-              {/each}
-            </div>
-            <span class="text-xs text-gray-500 ml-3">
-              {#if isRecording}
-                <span class="text-red-600 font-medium">● REC</span>
-              {:else}
-                Live audio input
-              {/if}
-            </span>
-          </div>
-        </div>
-      {/if}
-
-      <!-- Status with better visual cues -->
-      <div class="flex items-center justify-center mt-4 space-x-4 text-sm">
-        <div class="flex items-center space-x-2">
-          {#if isConnected}
-            <svg class="w-4 h-4 text-green-500" fill="currentColor" viewBox="0 0 20 20">
-              <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
-            </svg>
-            <span class="text-green-700 font-medium">Connected & Listening</span>
-          {:else if isConnecting}
-            <div class="animate-spin rounded-full h-4 w-4 border-2 border-orange-500 border-t-transparent"></div>
-            <span class="text-orange-700 font-medium">Establishing connection...</span>
-          {:else}
-            <svg class="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
-              <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
-            </svg>
-            <span class="text-gray-600">Ready to start practicing German</span>
-          {/if}
-        </div>
-      </div>
-
-      {#if isConnected}
-        <div class="mt-3 text-xs text-gray-500">
-          Peak of natural voice practice - speak continuously like in a real conversation!
-        </div>
-      {/if}
+      <h1 class="text-3xl font-bold text-white mb-2">🎵 Voice Agent Demo</h1>
+      <p class="text-slate-400">Based on Deepgram Voice Agent API</p>
     </header>
 
-    <!-- Main Content -->
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <!-- Left Panel - Controls -->
-      <div class="bg-white rounded-xl shadow-md p-6">
-        <h2 class="text-xl font-semibold mb-4 text-gray-800">Session Controls</h2>
-        
-        <div class="space-y-4">
-          <!-- Connection Toggle -->
-          <button
-            on:click={toggleConnection}
-            class="w-full flex items-center justify-center px-6 py-3 rounded-lg font-medium text-white transition-colors duration-200
-                   {isConnected ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-600 hover:bg-blue-700'}"
-            disabled={isConnecting}
-          >
-            {#if isConnecting}
-              <svg class="animate-spin -ml-1 mr-2 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-              Connecting...
-            {:else if isConnected}
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
-                <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd" />
-              </svg>
-              Disconnect
-            {:else}
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
-                <path fill-rule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z" clip-rule="evenodd" />
-              </svg>
-              Connect to Voice Agent
-            {/if}
-          </button>
-
-
+    <!-- Connection Status -->
+    <div class="bg-slate-800 p-4 rounded-lg mb-6">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center space-x-3">
+          <div class="w-3 h-3 rounded-full {status === 'Connected' ? 'bg-green-400' :
+           status === 'Connecting...' ? 'bg-orange-400' : 'bg-red-400'}"></div>
+          <span class="text-white font-medium">Status: {status}</span>
         </div>
-
-        <!-- Quick Actions -->
-        <div class="mt-6">
-          <h3 class="text-sm font-medium text-gray-700 mb-2">Quick Actions</h3>
-          <div class="grid grid-cols-2 gap-2">
-            <button
-              on:click={() => sendTextToAgent('Können Sie das bitte wiederholen?')}
-              class="flex items-center justify-center px-3 py-2 bg-white border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
-              disabled={!isConnected}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              Repeat
-            </button>
-            <button
-              on:click={() => sendTextToAgent('Können Sie das bitte übersetzen?')}
-              class="flex items-center justify-center px-3 py-2 bg-white border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
-              disabled={!isConnected}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
-              </svg>
-              Translate
-            </button>
-            <button
-              on:click={() => sendTextToAgent('Können Sie das bitte langsamer sagen?')}
-              class="flex items-center justify-center px-3 py-2 bg-white border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
-              disabled={!isConnected}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-              </svg>
-              Slower
-            </button>
-            <button
-              on:click={clearConversation}
-              class="flex items-center justify-center px-3 py-2 bg-white border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-              Clear
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Center Panel - Conversation -->
-      <div class="lg:col-span-2 bg-white rounded-xl shadow-md overflow-hidden flex flex-col">
-        <!-- Conversation Header -->
-        <div class="bg-gray-50 px-6 py-4 border-b border-gray-200">
-          <div class="flex items-center justify-between">
-            <h2 class="text-lg font-semibold text-gray-800">Conversation</h2>
-          </div>
-        </div>
-
-        <!-- Messages -->
-        <div class="flex-1 overflow-y-auto p-6 space-y-4" id="messages-container">
-          {#if conversationHistory.length === 0}
-            <div class="flex flex-col items-center justify-center h-64 text-gray-400">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-              </svg>
-              <p>Start a conversation with the voice agent</p>
-            </div>
-          {:else}
-            {#each conversationHistory as message, i}
-              <div class="flex {message.role === 'user' ? 'justify-end' : 'justify-start'} mb-4">
-                <div class="flex max-w-xs lg:max-w-md">
-                  <div class="flex-shrink-0 h-8 w-8 rounded-full bg-blue-500 text-white flex items-center justify-center mr-2">
-                    {#if message.role === 'user'}
-                      <span>You</span>
-                    {:else}
-                      <span>AI</span>
-                    {/if}
-                  </div>
-                  <div class="px-4 py-2 rounded-lg {message.role === 'user' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-800'}">
-                    <p class="text-sm">{message.content}</p>
-                    <p class="text-xs mt-1 opacity-70">
-                      {new Date(message.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            {/each}
-          {/if}
-        </div>
-
-        <!-- Input Area -->
-        <div class="border-t border-gray-200 p-4">
-          <form on:submit|preventDefault={handleTextSubmit} class="flex space-x-2">
-            <input
-              type="text"
-              bind:value={inputText}
-              placeholder="Type your message..."
-              class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              disabled={!isConnected}
-            />
-            <button
-              type="submit"
-              class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
-              disabled={!isConnected || !inputText.trim()}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                <path fill-rule="evenodd" d="M10.293 5.293a1 1 0 011.414 0l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414-1.414L12.586 11H5a1 1 0 110-2h7.586l-2.293-2.293a1 1 0 010-1.414z" clip-rule="evenodd" />
-              </svg>
-            </button>
-            <button
-              type="button"
-              class={`flex items-center justify-center px-4 py-2 rounded-lg font-medium text-white transition-colors duration-200 ${
-                isConnected ? 'bg-green-500 hover:bg-green-600' : 'bg-gray-400 cursor-not-allowed'
-              }`}
-              disabled={!isConnected}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
-                <path d="M18 3a1 1 0 00-1.196-.98l-10 2A1 1 0 006 5v9.114A4.369 4.369 0 005 14c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V7.82l8-1.6v5.894A4.37 4.37 0 0015 14a4.367 4.367 0 00-1.11-.81L17.073 4H18V3z"/>
-              </svg>
-              Voice Active
-            </button>
-          </form>
-        </div>
+        <button
+          on:click={toggleConnection}
+          class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+        >
+          {isConnected ? 'Disconnect' : 'Connect'}
+        </button>
       </div>
     </div>
 
-    <!-- Error Alert -->
-    {#if error}
-      <div class="fixed bottom-4 right-4 max-w-sm bg-red-50 border-l-4 border-red-500 p-4 rounded-lg shadow-lg">
-        <div class="flex">
-          <div class="flex-shrink-0">
-            <svg class="h-5 w-5 text-red-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-              <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
-            </svg>
+    <!-- Chat Area -->
+    <div class="bg-slate-800 rounded-lg p-4 mb-6 h-96 overflow-y-auto">
+      <h3 class="text-white font-semibold mb-4">Conversation</h3>
+      <div id="messages" class="space-y-3">
+        {#each messages as msg}
+          <div class="flex {msg.type === 'user' ? 'justify-end' : 'justify-start'}">
+            <div class="max-w-sm px-4 py-2 rounded-lg {msg.type === 'user' ? 'bg-blue-600 text-white' : 'bg-slate-700 text-white'}">
+              <div class="text-sm">{msg.text}</div>
+              <div class="text-xs opacity-70 mt-1">{new Date(msg.timestamp).toLocaleTimeString()}</div>
+            </div>
           </div>
-          <div class="ml-3">
-            <p class="text-sm text-red-700">{error}</p>
+        {/each}
+        {#if isRecording}
+          <div class="flex justify-center">
+            <div class="px-4 py-2 rounded-lg bg-slate-700 text-white flex items-center">
+              <div class="flex space-x-1 mr-3">
+                <div class="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
+                <div class="w-2 h-2 bg-blue-400 rounded-full animate-pulse animation-delay-200"></div>
+                <div class="w-2 h-2 bg-blue-400 rounded-full animate-pulse animation-delay-400"></div>
+              </div>
+              <span class="text-sm">Recording...</span>
+            </div>
           </div>
-          <div class="ml-4 flex-shrink-0 flex">
-            <button on:click={() => error = ''} class="inline-flex text-red-500 focus:outline-none focus:text-red-700">
-              <span class="sr-only">Close</span>
-              <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
-              </svg>
-            </button>
-          </div>
-        </div>
+        {/if}
       </div>
-    {/if}
+    </div>
+
+    <!-- Controls -->
+    <div class="flex space-x-4">
+      <button
+        on:click={startRecording}
+        disabled={!isConnected || isRecording}
+        class="flex-1 py-3 px-6 bg-green-600 hover:bg-green-700 disabled:bg-slate-600 text-white rounded-lg transition-colors"
+      >
+        🎤 Speak
+      </button>
+
+      <button
+        on:click={stopRecording}
+        disabled={!isRecording}
+        class="flex-1 py-3 px-6 bg-red-600 hover:bg-red-700 disabled:bg-slate-600 text-white rounded-lg transition-colors"
+      >
+        ⏹️ Stop
+      </button>
+    </div>
+
+    <!-- Debug Info -->
+    <div class="mt-8 bg-slate-800 p-4 rounded-lg">
+      <h4 class="text-white font-semibold mb-3">Debug Info</h4>
+      <div class="text-slate-400 text-sm space-y-1">
+        <div>WebSocket URL: wss://api.deepgram.com/v1/listen/agent?token=***</div>
+        <div>Audio Context: {audioContext ? 'Available' : 'Not initialized'}</div>
+        <div>Microphone: {micStream ? 'Available' : 'Not requested'}</div>
+        <div>Messages: {messages.length}</div>
+      </div>
+    </div>
+
   </div>
-
-  <style>
-    /* Custom scrollbar */
-    #messages-container::-webkit-scrollbar {
-      width: 6px;
-    }
-    #messages-container::-webkit-scrollbar-track {
-      background: #f1f1f1;
-      border-radius: 10px;
-    }
-    #messages-container::-webkit-scrollbar-thumb {
-      background: #cbd5e0;
-      border-radius: 10px;
-    }
-    #messages-container::-webkit-scrollbar-thumb:hover {
-      background: #a0aec0;
-    }
-    
-    /* Smooth animations */
-    .fade-enter-active, .fade-leave-active {
-      transition: opacity 200ms;
-    }
-    .fade-enter, .fade-leave-to {
-      opacity: 0;
-    }
-    
-    /* Custom range input */
-    input[type="range"] {
-      -webkit-appearance: none;
-      height: 6px;
-      background: #e2e8f0;
-      border-radius: 3px;
-    }
-    
-    input[type="range"]::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      appearance: none;
-      width: 16px;
-      height: 16px;
-      border-radius: 50%;
-      background: #3b82f6;
-      cursor: pointer;
-    }
-    
-    /* Button focus states */
-    button:focus {
-      outline: none;
-      box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.5);
-    }
-
-    /* Box styling */
-    .box {
-      border: 1px solid #eee;
-      padding: 1em;
-      border-radius: 8px;
-      background-color: #f9f9f9;
-    }
-
-    h2 {
-      font-size: 1em;
-      color: #555;
-      margin-top: 0;
-    }
-
-    .loading {
-      margin-top: 2em;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-    }
-
-    .spinner {
-      border: 4px solid rgba(0, 0, 0, 0.1);
-      width: 36px;
-      height: 36px;
-      border-radius: 50%;
-      border-left-color: #007bff;
-      animation: spin 1s ease infinite;
-    }
-
-    @keyframes spin {
-      0% {
-        transform: rotate(0deg);
-      }
-      100% {
-        transform: rotate(360deg);
-      }
-    }
-
-    .error {
-      color: #ef4444;
-      margin-top: 1em;
-      padding: 0.5em;
-      background-color: #fef2f2;
-      border-radius: 4px;
-    }
-  </style>
 </main>
+
+<style>
+  .animation-delay-200 { animation-delay: 0.2s; }
+  .animation-delay-400 { animation-delay: 0.4s; }
+</style>
