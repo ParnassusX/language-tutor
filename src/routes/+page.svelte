@@ -1,17 +1,28 @@
 <script lang="ts">
-  // Based on Deepgram Voice Agent documentation
-  // https://docs.deepgram.com/reference/voice-agent
+  // German Language Learning App
+  // Interactive Voice Tutor using Deepgram Voice Agent
   import { onMount } from 'svelte';
 
-  // Types for better type safety
+  // Enhanced types for German learning
   interface Message {
     text: string;
-    type: 'user' | 'system' | 'ai';
+    type: 'user' | 'system' | 'ai' | 'correction' | 'translation';
     timestamp: Date;
+    translation?: string;
+    difficulty?: 'beginner' | 'intermediate' | 'advanced';
   }
 
-  // State with proper types
-  let status: string = 'Disconnected';
+  interface Lesson {
+    id: string;
+    title: string;
+    topic: string;
+    level: 'A1' | 'A2' | 'B1' | 'B2' | 'C1';
+    vocalbulary: string[];
+    phrases: string[];
+  }
+
+  // State management
+  let status: string = 'Bereit zum Lernen';
   let isConnected: boolean = false;
   let messages: Message[] = [];
   let socket: WebSocket | null = null;
@@ -20,12 +31,34 @@
   let recorder: MediaRecorder | null = null;
   let isRecording: boolean = false;
 
-  function addMessage(text: string, type: 'user' | 'system' | 'ai' = 'system'): void {
-    messages = [...messages, {
+  // Learning state
+  let currentTopic: string = 'Grüße und Vorstellungen';
+  let userLevel: 'A1' | 'A2' | 'B1' = 'A1';
+  let showTranslation: boolean = true;
+  let useVoice: boolean = true;
+  let apiAvailable: boolean = false;
+
+  // Current lesson content
+  let currentLesson: Lesson = {
+    id: 'greetings',
+    title: 'Grüße und Vorstellungen',
+    topic: 'Alltagskommunikation',
+    level: 'A1',
+    vocalbulary: ['Hallo', 'Auf Wiedersehen', 'Wie geht\'s?', 'Danke', 'Bitte', 'Ich heiße...'],
+    phrases: [
+      'Guten Morgen!', 'Guten Tag!', 'Guten Abend!',
+      'Wie geht es Ihnen?', 'Wie heißt du?', 'Woher kommst du?'
+    ]
+  };
+
+  function addMessage(text: string, type: 'user' | 'system' | 'ai' | 'correction' | 'translation' = 'system', translation?: string): void {
+    const message: Message = {
       text,
       type,
-      timestamp: new Date()
-    }];
+      timestamp: new Date(),
+      translation: showTranslation ? translation : undefined
+    };
+    messages = [...messages, message];
     console.log(`[${new Date().toLocaleTimeString()}] ${type.toUpperCase()}:`, text);
   }
 
@@ -237,19 +270,37 @@
   }
 
   onMount(async () => {
-    addMessage('App loaded - Voice Agent Demo');
+    addMessage('Willkommen beim Deutschen Sprachkurs! 👋', 'ai', 'Welcome to the German Language Course!');
+    setTimeout(() => {
+      addMessage('Bereit für Ihre erste Lektion? Ich bin hier um Ihnen beim Lernen zu helfen.', 'ai',
+                 'Ready for your first lesson? I\'m here to help you learn.');
+    }, 1000);
   });
 </script>
 
-<!-- Deepgram Voice Agent - Based on Official Docs -->
+<!-- 🇩🇪 German Language Learning App -->
 <main class="min-h-screen bg-slate-900 p-6">
-  <div class="max-w-4xl mx-auto">
+  <div class="max-w-6xl mx-auto">
 
     <!-- Header -->
     <header class="text-center mb-8">
-      <h1 class="text-3xl font-bold text-white mb-2">🎵 Voice Agent Demo</h1>
-      <p class="text-slate-400">Based on Deepgram Voice Agent API</p>
+      <h1 class="text-4xl font-bold text-white mb-2">🇩🇪 German Language Tutor</h1>
+      <h2 class="text-lg text-slate-300 mb-1">{currentLesson.title}</h2>
+      <p class="text-sm text-slate-400">Level: {userLevel} • Topic: {currentLesson.topic}</p>
     </header>
+
+    <!-- Lesson Controls -->
+    <div class="flex flex-wrap gap-4 mb-6 justify-center">
+      <select bind:value={userLevel} class="bg-slate-800 text-white px-4 py-2 rounded-lg border border-slate-600">
+        <option value="A1">A1 - Beginner</option>
+        <option value="A2">A2 - Elementary</option>
+        <option value="B1">B1 - Intermediate</option>
+      </select>
+      <button class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
+        on:click={() => showTranslation = !showTranslation}>
+        🔤 {showTranslation ? 'Hide' : 'Show'} Translations
+      </button>
+    </div>
 
     <!-- Connection Status -->
     <div class="bg-slate-800 p-4 rounded-lg mb-6">

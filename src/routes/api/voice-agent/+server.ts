@@ -106,10 +106,16 @@ Tutor: Schön, Sie kennenzulernen, [Name]! Woher kommen Sie? (Nice to meet you, 
   }
 };
 
-export const GET = async (request) => {
+export const GET = async ({ request, url }) => {
+  // Check API key availability first
+  if (!env.DEEPGRAM_API_KEY) {
+    console.error('❌ DEEPGRAM_API_KEY not configured');
+    return createErrorResponse(500, 'Voice API not configured. Set DEEPGRAM_API_KEY in environment variables.');
+  }
+
   // Check if user requests transcription-only mode
-  const url = new URL(request.url);
-  const mode = url.searchParams.get('mode') || 'voice-agent';
+  const requestUrl = new URL(url);
+  const mode = requestUrl.searchParams.get('mode') || 'voice-agent';
 
   console.log(`🎯 ${mode === 'transcription' ? 'Transcription-only' : 'Voice Agent'} configuration requested`);
 
@@ -148,7 +154,7 @@ export const GET = async (request) => {
         message: 'Voice Agent ready for WebSocket connection',
         websocketUrl: 'wss://api.deepgram.com/v1/listen/agent',
         config: GERMAN_TUTOR_CONFIG.agent,
-        fallbackUrl: `http://localhost:5173/api/voice-agent?mode=transcription`,
+        fallbackUrl: `/api/voice-agent?mode=transcription`,
         expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() // 24 hour expiration
       }), {
         status: 200,

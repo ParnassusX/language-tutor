@@ -40,18 +40,33 @@ export class MockWebSocket {
   onerror: ((event: Event) => void) | null = null;
   readyState = 0; // CONNECTING
   sentData: any[] = [];
-  
-  // Add message callback setter for testing
-  static setMessageCallback(callback: ((event: { data: string }) => void) | null) {
-    this.messageCallback = callback;
+
+  // Method to trigger successful connection (for testing)
+  triggerOpen() {
+    this.readyState = 1; // OPEN
+    if (this.onopen) {
+      this.onopen();
+    }
+  }
+
+  // Method to trigger close (for testing)
+  triggerClose() {
+    this.readyState = 3; // CLOSED
+    if (this.onclose) {
+      this.onclose();
+    }
+  }
+
+  // Method to trigger error (for testing)
+  triggerError(event: Event = new Event('error')) {
+    if (this.onerror) {
+      this.onerror(event);
+    }
   }
 
   constructor(public url: string) {
     MockWebSocket._instances.push(this);
-    setTimeout(() => {
-      this.readyState = 1; // OPEN
-      if (this.onopen) this.onopen();
-    }, 10);
+    // Don't automatically trigger open - let tests control this
   }
 
   send(data: any) {
@@ -157,14 +172,20 @@ Object.defineProperty(window, 'MediaRecorder', {
   }
 });
 
+// Mock MediaStream
+Object.defineProperty(window, 'MediaStream', {
+  writable: true,
+  value: class MediaStream {}
+});
+
 // Mock navigator.mediaDevices
 Object.defineProperty(navigator, 'mediaDevices', {
   writable: true,
   value: {
-    getUserMedia: vi.fn(() => 
+    getUserMedia: vi.fn(() =>
       Promise.resolve(new MediaStream())
     ),
-    enumerateDevices: vi.fn(() => 
+    enumerateDevices: vi.fn(() =>
       Promise.resolve([
         { kind: 'audioinput', deviceId: 'mic1', label: 'Microphone' }
       ])

@@ -1,10 +1,5 @@
 [build]
 builder = "NIXPACKS"
-buildCommand = "npm install && npm run build"
-
-# Build cache for faster deployments
-[build.cache]
-directories = ["node_modules"]
 
 [deploy]
 startCommand = "node build/index.js"
@@ -12,26 +7,20 @@ healthcheckPath = "/"
 healthcheckTimeout = 30
 restartPolicyType = "ON_FAILURE"
 
-# BASIC CONFIGURATION
+# Simplified Build Configuration
 [build.environment]
 NODE_ENV = "production"
 
+# Production Environment - Keep Only Essentials
 [deploy.environment]
 NODE_ENV = "production"
-PORT = "3000"
+PORT = "$PORT"  # Railway sets this automatically
 HOST = "0.0.0.0"
 
-# MEMORY & PERFORMANCE OPTIMIZATION FOR VOICE CALLS
-NODE_OPTIONS = "--max-old-space-size=4096"         # 4GB memory for voice processing
-WEBSOCKET_TIMEOUT = "600000"                       # 10 minutes sustained connections
-WEBSOCKET_MAX_CONNECTIONS = "50"                   # Individual learners optimized
-AUDIO_BUFFER_SIZE = "10240"                        # Smooth audio streaming buffers
-CONNECTION_POOL_SIZE = "5"                         # HTTP connection pooling
-VOICE_SESSION_TIMEOUT = "900000"                   # 15 minute voice practice
-AUDIO_QUALITY = "high"                             # Professional German synthesis
+# REQUIRED API KEY - Must be set in Railway Variables
+# DEEPGRAM_API_KEY must be set in Railway Dashboard > Variables
 
-# ⚠️  CRITICAL: Set these in Railway Variables (Dashboard > Variables section)
-# DEEPGRAM_API_KEY = "Get your key from https://console.deepgram.com/"
-# DEEPL_API_KEY = "Optional - from https://www.deepl.com/"
-# GEMINI_API_KEY = "Optional fallback - from https://makersuite.google.com/"
-# ADMIN_PASSWORD = "Secure admin password for /admin"
+# Optional Environment Variables (set in Railway if needed)
+# DEEPL_API_KEY (for translation features)
+# GEMINI_API_KEY (fallback AI)
+# ADMIN_PASSWORD (for admin access)

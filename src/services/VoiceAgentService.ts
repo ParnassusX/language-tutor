@@ -1,4 +1,4 @@
-import { browser } from '$app/environment';
+import { dev } from '$app/environment';
 
 type MessageHandler = (data: any) => void;
 type ErrorHandler = (error: Error) => void;
@@ -20,7 +20,8 @@ export class VoiceAgentService {
   constructor(private wsUrl: string = 'ws://localhost:6000/api/voice-agent') {}
 
   async connect(): Promise<void> {
-    if (!browser) {
+    // In test environments, skip browser environment check
+    if (typeof window === 'undefined' && !dev) {
       throw new Error('VoiceAgentService can only be used in the browser');
     }
 
