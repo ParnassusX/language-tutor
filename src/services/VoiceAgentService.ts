@@ -1,169 +1,63 @@
-import { dev } from '$app/environment';
-
-type MessageHandler = (data: any) => void;
-type ErrorHandler = (error: Error) => void;
+type EventHandler = (data: any) => void;
 
 export class VoiceAgentService {
   private socket: WebSocket | null = null;
-  private messageHandlers: Set<MessageHandler> = new Set();
-  private errorHandlers: Set<ErrorHandler> = new Set();
-  private reconnectAttempts = 0;
-  private maxReconnectAttempts = 5;
-  private reconnectDelay = 1000; // 1 second
   private isExplicitDisconnect = false;
   private audioContext: AudioContext | null = null;
-  private audioInput: MediaStreamAudioSourceNode | null = null;
-  private processor: ScriptProcessorNode | null = null;
-  private mediaRecorder: MediaRecorder | null = null;
-  private audioChunks: BlobPart[] = [];
+  private micStream: MediaStream | null = null;
+  private recorder: MediaRecorder | null = null;
 
-  constructor(private wsUrl: string = 'ws://localhost:6000/api/voice-agent') {}
+  private eventHandlers: Map<string, Set<EventHandler>> = new Map();
 
+  constructor() {}
+
+  // --- Event Emitter ---
+  on(event: string, handler: EventHandler): () => void {
+    if (!this.eventHandlers.has(event)) {
+      this.eventHandlers.set(event, new Set());
+    }
+    this.eventHandlers.get(event)!.add(handler);
+    return () => this.eventHandlers.get(event)!.delete(handler);
+  }
+
+  private emit(event: string, data?: any): void {
+    if (this.eventHandlers.has(event)) {
+      this.eventHandlers.get(event)!.forEach(handler => handler(data));
+    }
+  }
+
+  // --- Connection ---
   async connect(): Promise<void> {
-    // In test environments, skip browser environment check
-    if (typeof window === 'undefined' && !dev) {
-      throw new Error('VoiceAgentService can only be used in the browser');
-    }
-
-    if (this.isConnected()) {
+    if (typeof window === 'undefined') {
+      this.emit('error', new Error('VoiceAgentService can only be used in a browser environment.'));
       return;
     }
+    if (this.isConnected()) return;
+
+    this.emit('status', 'Connecting...');
 
     try {
-      this.socket = new WebSocket(this.wsUrl);
+      const response = await fetch('/api/voice-agent');
+      if (!response.ok) {
+        throw new Error(`Failed to get connection details: ${response.statusText}`);
+      }
+      const { token, websocketUrl } = await response.json();
+
+      if (!token || !websocketUrl) {
+        throw new Error('Invalid connection details received from API.');
+      }
+
+      await this.initAudio();
+
+      const fullWsUrl = `${websocketUrl}?token=${token}`;
+      this.socket = new WebSocket(fullWsUrl);
       this.setupSocketHandlers();
-      await this.setupAudio();
+
       this.isExplicitDisconnect = false;
-      this.reconnectAttempts = 0;
     } catch (error) {
-      this.handleError(error as Error);
-      throw error;
+      this.emit('error', error as Error);
+      this.emit('status', 'Connection Failed');
     }
-  }
-
-  private setupSocketHandlers(): void {
-    if (!this.socket) return;
-
-    this.socket.onopen = () => {
-      console.log('WebSocket connection established');
-      this.reconnectAttempts = 0;
-    };
-
-    this.socket.onmessage = (event: MessageEvent) => {
-      try {
-        const data = JSON.parse(event.data);
-        this.messageHandlers.forEach(handler => handler(data));
-      } catch (error) {
-        console.error('Error processing message:', error);
-        this.handleError(error as Error);
-      }
-    };
-
-    this.socket.onerror = (event: Event) => {
-      console.error('WebSocket error:', event);
-      this.handleError(new Error('WebSocket error occurred'));
-    };
-
-    this.socket.onclose = () => {
-      console.log('WebSocket connection closed');
-      this.cleanup();
-      
-      if (!this.isExplicitDisconnect && this.reconnectAttempts < this.maxReconnectAttempts) {
-        this.reconnect();
-      }
-    };
-  }
-
-  private async setupAudio(): Promise<void> {
-    try {
-      this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      
-      this.audioInput = this.audioContext.createMediaStreamSource(stream);
-      this.processor = this.audioContext.createScriptProcessor(4096, 1, 1);
-      
-      this.processor.onaudioprocess = (e) => {
-        if (!this.isConnected()) return;
-        
-        const inputData = e.inputBuffer.getChannelData(0);
-        this.sendAudioData(inputData);
-      };
-      
-      this.audioInput.connect(this.processor);
-      this.processor.connect(this.audioContext.destination);
-      
-      // Setup media recorder for full audio capture
-      this.mediaRecorder = new MediaRecorder(stream);
-      this.mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          this.audioChunks.push(e.data);
-        }
-      };
-      
-      this.mediaRecorder.start(100); // Collect data every 100ms
-      
-    } catch (error) {
-      console.error('Error setting up audio:', error);
-      this.handleError(error as Error);
-      throw error;
-    }
-  }
-
-  sendAudioData(data: Float32Array): void {
-    if (!this.isConnected()) {
-      console.warn('Cannot send audio data: WebSocket not connected');
-      return;
-    }
-    
-    try {
-      // Convert Float32 to Int16 for smaller payload
-      const int16Data = this.floatTo16BitPCM(data);
-      this.socket?.send(int16Data.buffer);
-    } catch (error) {
-      console.error('Error sending audio data:', error);
-      this.handleError(error as Error);
-    }
-  }
-
-  private floatTo16BitPCM(input: Float32Array): Int16Array {
-    const output = new Int16Array(input.length);
-    for (let i = 0; i < input.length; i++) {
-      const s = Math.max(-1, Math.min(1, input[i]));
-      output[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-    }
-    return output;
-  }
-
-  onMessage(handler: MessageHandler): () => void {
-    this.messageHandlers.add(handler);
-    return () => this.messageHandlers.delete(handler);
-  }
-
-  onError(handler: ErrorHandler): () => void {
-    this.errorHandlers.add(handler);
-    return () => this.errorHandlers.delete(handler);
-  }
-
-  private handleError(error: Error): void {
-    console.error('VoiceAgentService error:', error);
-    this.errorHandlers.forEach(handler => handler(error));
-  }
-
-  private reconnect(): void {
-    this.reconnectAttempts++;
-    console.log(`Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
-    
-    setTimeout(() => {
-      if (!this.isExplicitDisconnect) {
-        this.connect().catch(error => {
-          console.error('Reconnection failed:', error);
-        });
-      }
-    }, this.reconnectDelay * this.reconnectAttempts);
-  }
-
-  isConnected(): boolean {
-    return this.socket?.readyState === WebSocket.OPEN;
   }
 
   disconnect(): void {
@@ -171,67 +65,116 @@ export class VoiceAgentService {
     this.cleanup();
   }
 
+  isConnected(): boolean {
+    return this.socket?.readyState === WebSocket.OPEN;
+  }
+
+  private setupSocketHandlers(): void {
+    if (!this.socket) return;
+
+    this.socket.onopen = () => {
+      this.emit('connected', {});
+      const settings = {
+        type: 'Settings',
+        language: 'de',
+        model: 'aura-2-en',
+        speak: { speed: 0.95, style: 0.8 },
+        listen: { endpointing: 300, no_speech_timeout: 2500 },
+        think: {
+            provider: { type: "google", model: "gemini-1.5-flash" },
+            prompt: "You are a friendly and patient German language tutor. Your goal is to help users learn German through natural conversation. Keep responses concise (1-2 sentences). Respond in German unless the user asks for English."
+        }
+      };
+      this.socket?.send(JSON.stringify(settings));
+    };
+
+    this.socket.onmessage = (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data);
+        this.emit('message', data);
+      } catch (error) {
+        this.emit('error', new Error('Error processing incoming message.'));
+      }
+    };
+
+    this.socket.onerror = (event: Event) => {
+      this.emit('error', new Error('WebSocket error occurred'));
+    };
+
+    this.socket.onclose = () => {
+      this.cleanup();
+      if (!this.isExplicitDisconnect) {
+        this.emit('error', new Error('Connection closed unexpectedly.'));
+      }
+      this.emit('disconnected', {});
+    };
+  }
+
+  // --- Audio Handling ---
+  private async initAudio(): Promise<void> {
+    try {
+      this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      if (this.audioContext.state === 'suspended') {
+        await this.audioContext.resume();
+      }
+      this.micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (error) {
+      throw new Error('Microphone access denied. Please allow microphone access to use the voice agent.');
+    }
+  }
+
+  startRecording(): void {
+    if (!this.isConnected() || !this.micStream) {
+      this.emit('error', new Error('Cannot start recording: not connected or no microphone access.'));
+      return;
+    }
+
+    try {
+      this.recorder = new MediaRecorder(this.micStream, { mimeType: 'audio/webm' });
+
+      this.recorder.ondataavailable = (event) => {
+        if (event.data.size > 0 && this.socket?.readyState === WebSocket.OPEN) {
+          this.socket.send(event.data);
+        }
+      };
+
+      this.recorder.start(250); // Send data every 250ms
+      this.emit('recording', true);
+    } catch (error) {
+      this.emit('error', new Error('Failed to start recording.'));
+    }
+  }
+
+  stopRecording(): void {
+    if (this.recorder && this.recorder.state === 'recording') {
+      this.recorder.stop();
+      this.recorder = null;
+      this.emit('recording', false);
+    }
+  }
+
   private cleanup(): void {
-    // Close WebSocket
     if (this.socket) {
       this.socket.onopen = null;
       this.socket.onmessage = null;
       this.socket.onerror = null;
       this.socket.onclose = null;
-      
       if (this.socket.readyState === WebSocket.OPEN) {
         this.socket.close();
       }
-      
       this.socket = null;
     }
+    
+    this.stopRecording();
 
-    // Clean up audio
-    if (this.processor) {
-      this.processor.disconnect();
-      this.processor = null;
+    if (this.micStream) {
+      this.micStream.getTracks().forEach(track => track.stop());
+      this.micStream = null;
     }
-    
-    if (this.audioInput) {
-      this.audioInput.disconnect();
-      this.audioInput = null;
-    }
-    
-    if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
-      this.mediaRecorder.stop();
-      this.mediaRecorder = null;
-    }
-    
+
     if (this.audioContext && this.audioContext.state !== 'closed') {
       this.audioContext.close();
       this.audioContext = null;
     }
-    
-    this.audioChunks = [];
-  }
-
-  async getRecordedAudio(): Promise<Blob | null> {
-    if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
-      try {
-        this.mediaRecorder.requestData();
-        await new Promise(resolve => {
-          const checkChunks = () => {
-            if (this.audioChunks.length > 0) {
-              resolve(null);
-            } else {
-              setTimeout(checkChunks, 100);
-            }
-          };
-          checkChunks();
-        });
-      } catch (error) {
-        console.error('Error getting recorded audio:', error);
-        this.handleError(error as Error);
-      }
-    }
-    
-    return this.audioChunks.length > 0 
-      ? new Blob(this.audioChunks, { type: 'audio/wav' })
-      : null;
   }
 }
