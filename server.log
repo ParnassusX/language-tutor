@@ -1,0 +1,6 @@
+
+> language-tutor@0.0.1 start
+> node build/index.js
+
+✅ All required environment variables are set
+Listening on 0.0.0.0:3000
