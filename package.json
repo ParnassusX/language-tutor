@@ -19,11 +19,9 @@
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"test:ui": "vitest --ui",
-		"test:coverage": "vitest run --coverage",
-		"test:e2e": "playwright test"
+		"test:coverage": "vitest run --coverage"
 	},
 	"devDependencies": {
-		"@playwright/test": "^1.44.0",
 		"@sveltejs/adapter-node": "^1.0.0",
 		"@sveltejs/kit": "^1.20.4",
 		"@sveltejs/vite-plugin-svelte": "^2.4.2",
