@@ -77,7 +77,7 @@ export class VoiceAgentService {
       const settings = {
         type: 'Settings',
         language: 'de',
-        model: 'aura-2-en',
+        model: 'nova-3',
         speak: { speed: 0.95, style: 0.8 },
         listen: { endpointing: 300, no_speech_timeout: 2500 },
         think: {
