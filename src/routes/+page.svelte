@@ -56,6 +56,13 @@
     }
   }
 
+  async function handleLogout() {
+    await fetch('/api/auth/logout', {
+      method: 'POST',
+    });
+    window.location.href = '/login';
+  }
+
   function addMessage(text: string, type: 'user' | 'system' | 'ai' | 'correction' | 'translation' = 'system', translation?: string): void {
     const message: Message = {
       text,
@@ -259,6 +266,9 @@
 <main class="min-h-screen bg-slate-900 p-6">
   <div class="max-w-6xl mx-auto">
     <Header title={currentLesson.title} userLevel={userLevel} topic={currentLesson.topic} />
+    <button on:click={handleLogout} class="absolute top-4 right-4 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors">
+      Logout
+    </button>
     <LessonControls bind:userLevel={userLevel} bind:showTranslation={showTranslation} on:toggleTranslation={() => showTranslation = !showTranslation} lessons={lessons} currentLesson={currentLesson} on:setLesson={handleLessonChange} />
     <ConnectionStatus status={status} isConnected={isConnected} on:toggleConnection={toggleConnection} />
     <ChatArea messages={messages} isRecording={isRecording} isAiThinking={isAiThinking} />

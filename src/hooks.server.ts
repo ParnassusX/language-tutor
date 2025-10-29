@@ -1,4 +1,5 @@
 import type { Handle } from '@sveltejs/kit';
+import { verifySession } from '$lib/server/auth';
 
 // Validate environment variables before app starts
 function validateEnvironment() {
@@ -27,6 +28,23 @@ function validateEnvironment() {
 validateEnvironment();
 
 export const handle: Handle = async ({ event, resolve }) => {
+  const session = event.cookies.get('session');
+  if (session) {
+    const user = await verifySession(session);
+    if (user) {
+      event.locals.user = user;
+    }
+  }
+
+  if (event.url.pathname !== '/login' && event.url.pathname !== '/signup' && !event.locals.user) {
+    return new Response(null, {
+      status: 302,
+      headers: {
+        location: '/login',
+      },
+    });
+  }
+
 	const response = await resolve(event);
 
 	// Add security headers for production
