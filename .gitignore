@@ -14,6 +14,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+*.log
 
 # IDEs and editors
 .vscode
@@ -24,4 +25,10 @@ pnpm-debug.log*
 *.sln
 *.sw?
 
+# Database
+/prisma/dev.db
+
 /../generated/prisma
+
+# Agent scratchpad
+/jules-scratch/

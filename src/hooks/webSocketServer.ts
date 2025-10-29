@@ -1,7 +1,7 @@
 // src/hooks/webSocketServer.ts
 import { WebSocketServer, WebSocket } from 'ws';
 import type { Server } from 'http';
-import { env } from '$env/dynamic/private';
+import 'dotenv/config'
 
 export function configureWebSocketServer(server: Server) {
   const wss = new WebSocketServer({ server });
@@ -11,7 +11,7 @@ export function configureWebSocketServer(server: Server) {
 
     const deepgramSocket = new WebSocket(`wss://api.deepgram.com/v1/listen/agent`, {
       headers: {
-        Authorization: `Token ${env.DEEPGRAM_API_KEY}`
+        Authorization: `Token ${process.env.DEEPGRAM_API_KEY}`
       }
     });
 

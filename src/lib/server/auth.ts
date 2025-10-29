@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
-import { sign, verify } from 'jsonwebtoken';
+import jwt from 'jsonwebtoken';
+const { sign, verify } = jwt;
 import { hash, compare } from 'bcrypt';
 import { env } from '$env/dynamic/private';
 import { v4 as uuidv4 } from 'uuid';
