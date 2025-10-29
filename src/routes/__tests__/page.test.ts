@@ -44,7 +44,7 @@ describe('Language Tutor Page', () => {
     expect(screen.getByTestId('connect-button')).toBeInTheDocument();
     expect(screen.getByTestId('translation-button')).toBeInTheDocument();
     expect(screen.getByText('Conversation')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /🎤 unmute/i })).toBeInTheDocument();
+    expect(screen.getByTestId('record-button')).toBeInTheDocument();
     expect(screen.getByText('Debug Info')).toBeInTheDocument();
   });
 
@@ -80,7 +80,7 @@ describe('Language Tutor Page', () => {
   it('toggles recording when connected', async () => {
     render(Page);
     const connectButton = screen.getByTestId('connect-button');
-    const recordButton = screen.getByRole('button', { name: /🎤 unmute/i });
+    const recordButton = screen.getByTestId('record-button');
 
     expect(recordButton).toBeDisabled();
 

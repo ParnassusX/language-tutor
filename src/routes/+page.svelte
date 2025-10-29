@@ -8,6 +8,8 @@
   import ChatArea from '$lib/components/ChatArea.svelte';
   import Controls from '$lib/components/Controls.svelte';
   import DebugInfo from '$lib/components/DebugInfo.svelte';
+  import { lessons } from '$lib/lessons';
+  import type { Lesson } from '$lib/lessons';
 
   // Enhanced types for German learning
   interface Message {
@@ -36,6 +38,7 @@
   let micStream: MediaStream | null = null;
   let recorder: MediaRecorder | null = null;
   let isRecording: boolean = false;
+  let isAiThinking: boolean = false;
 
   // Learning state
   let currentTopic: string = 'Grüße und Vorstellungen';
@@ -43,17 +46,15 @@
   let showTranslation: boolean = true;
 
   // Current lesson content
-  let currentLesson: Lesson = {
-    id: 'greetings',
-    title: 'Grüße und Vorstellungen',
-    topic: 'Alltagskommunikation',
-    level: 'A1',
-    vocalbulary: ['Hallo', 'Auf Wiedersehen', 'Wie geht\'s?', 'Danke', 'Bitte', 'Ich heiße...'],
-    phrases: [
-      'Guten Morgen!', 'Guten Tag!', 'Guten Abend!',
-      'Wie geht es Ihnen?', 'Wie heißt du?', 'Woher kommst du?'
-    ]
-  };
+  let currentLesson: Lesson = lessons[0];
+
+  function handleLessonChange(event: Event) {
+    const target = event.target as HTMLSelectElement;
+    const lesson = lessons.find(l => l.id === target.value);
+    if (lesson) {
+      currentLesson = lesson;
+    }
+  }
 
   function addMessage(text: string, type: 'user' | 'system' | 'ai' | 'correction' | 'translation' = 'system', translation?: string): void {
     const message: Message = {
@@ -130,7 +131,7 @@
               temperature: 0.7,
               max_tokens: 150
             },
-            prompt: `You are a helpful German language tutor. Respond only in German unless the user specifically asks for English. Keep responses conversational and encouraging.`
+            prompt: `You are a helpful German language tutor. Respond only in German unless the user specifically asks for English. Keep responses conversational and encouraging. If the user makes a grammar or pronunciation mistake, gently correct them and provide the correct version. For example, if the user says 'Ich gut' you should say 'Ich bin gut'.`
           }
         };
 
@@ -149,9 +150,12 @@
               const transcript = data.channel.alternatives[0]?.transcript;
               if (transcript) {
                 addMessage(transcript, 'user');
+                isAiThinking = true;
               }
             } else if (data.type === 'speech' && data.speech) {
-              addMessage('AI is speaking...', 'ai');
+              isAiThinking = false;
+              const messageType = data.text.includes('Correction:') ? 'correction' : 'ai';
+              addMessage(data.text, messageType);
               playAudio(data.speech);
             } else if (data.type === 'error') {
               addMessage('Error: ' + data.message, 'system');
@@ -255,9 +259,9 @@
 <main class="min-h-screen bg-slate-900 p-6">
   <div class="max-w-6xl mx-auto">
     <Header title={currentLesson.title} userLevel={userLevel} topic={currentLesson.topic} />
-    <LessonControls bind:userLevel={userLevel} bind:showTranslation={showTranslation} on:toggleTranslation={() => showTranslation = !showTranslation} />
+    <LessonControls bind:userLevel={userLevel} bind:showTranslation={showTranslation} on:toggleTranslation={() => showTranslation = !showTranslation} lessons={lessons} currentLesson={currentLesson} on:setLesson={handleLessonChange} />
     <ConnectionStatus status={status} isConnected={isConnected} on:toggleConnection={toggleConnection} />
-    <ChatArea messages={messages} isRecording={isRecording} />
+    <ChatArea messages={messages} isRecording={isRecording} isAiThinking={isAiThinking} />
     <Controls isConnected={isConnected} isRecording={isRecording} on:toggleRecording={toggleRecording} />
     <DebugInfo audioContext={audioContext} micStream={micStream} messages={messages} />
   </div>

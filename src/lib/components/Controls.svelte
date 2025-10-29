@@ -12,6 +12,7 @@
     on:click={() => dispatch('toggleRecording')}
     disabled={!isConnected}
     class="flex-1 py-3 px-6 bg-green-600 hover:bg-green-700 disabled:bg-slate-600 text-white rounded-lg transition-colors"
+    data-testid="record-button"
   >
     {isRecording ? '🎤 Mute' : '🎤 Unmute'}
   </button>
