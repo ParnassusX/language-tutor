@@ -55,25 +55,22 @@ describe('Language Tutor Page', () => {
 
     // Connect
     await fireEvent.click(connectButton);
+    await tick();
 
-    await waitFor(() => {
-      expect(screen.getByText(/connecting/i)).toBeInTheDocument();
-    });
+    expect(screen.getByTestId('status-message')).toHaveTextContent('Status: Connecting...');
 
     const ws = MockWebSocket.instances[0];
     ws.triggerOpen();
+    await tick();
 
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /disconnect/i })).toBeInTheDocument();
-    });
+    expect(screen.getByRole('button', { name: /disconnect/i })).toBeInTheDocument();
 
     // Disconnect
     const disconnectButton = screen.getByRole('button', { name: /disconnect/i });
     await fireEvent.click(disconnectButton);
+    await tick();
 
-    await waitFor(() => {
-      expect(screen.getByTestId('connect-button')).toBeInTheDocument();
-    });
+    expect(screen.getByTestId('connect-button')).toBeInTheDocument();
     expect(ws.close).toHaveBeenCalled();
   });
 
@@ -88,22 +85,21 @@ describe('Language Tutor Page', () => {
     await fireEvent.click(connectButton);
     const ws = MockWebSocket.instances[0];
     ws.triggerOpen();
+    await tick();
 
-    await waitFor(() => {
-      expect(recordButton).not.toBeDisabled();
-    });
+    expect(recordButton).not.toBeDisabled();
 
     // Start recording
     await fireEvent.click(recordButton);
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /🎤 mute/i })).toBeInTheDocument();
-    });
+    await tick();
+
+    expect(screen.getByRole('button', { name: /🎤 mute/i })).toBeInTheDocument();
 
     // Stop recording
     await fireEvent.click(recordButton);
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /🎤 unmute/i })).toBeInTheDocument();
-    });
+    await tick();
+
+    expect(screen.getByRole('button', { name: /🎤 unmute/i })).toBeInTheDocument();
   });
 
   it('displays transcription messages from the agent', async () => {
@@ -122,10 +118,9 @@ describe('Language Tutor Page', () => {
       }
     };
     ws.triggerMessage(JSON.stringify(message));
+    await tick();
 
-    await waitFor(() => {
-      expect(screen.getByText('Hello there')).toBeInTheDocument();
-    });
+    expect(screen.getByText('Hello there')).toBeInTheDocument();
   });
 
   it('handles microphone access errors gracefully', async () => {
@@ -135,10 +130,9 @@ describe('Language Tutor Page', () => {
     render(Page);
     const connectButton = screen.getByTestId('connect-button');
     await fireEvent.click(connectButton);
+    await tick();
 
-    await waitFor(() => {
-      expect(screen.getByText(/audio initialization failed/i)).toBeInTheDocument();
-      expect(screen.getByText(new RegExp(errorMessage))).toBeInTheDocument();
-    });
+    expect(screen.getByText(/audio initialization failed/i)).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(errorMessage))).toBeInTheDocument();
   });
 });

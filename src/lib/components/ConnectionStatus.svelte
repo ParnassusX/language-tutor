@@ -12,7 +12,7 @@
     <div class="flex items-center space-x-3">
       <div class="w-3 h-3 rounded-full {status === 'Connected' ? 'bg-green-400' :
        status === 'Connecting...' ? 'bg-orange-400' : 'bg-red-400'}"></div>
-      <span class="text-white font-medium">Status: {status}</span>
+      <span class="text-white font-medium" data-testid="status-message">Status: {status}</span>
     </div>
     <button
       on:click={() => dispatch('toggleConnection')}
