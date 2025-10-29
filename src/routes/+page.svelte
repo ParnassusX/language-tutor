@@ -2,6 +2,12 @@
   // German Language Learning App
   // Interactive Voice Tutor using Deepgram Voice Agent
   import { onMount } from 'svelte';
+  import Header from '$lib/components/Header.svelte';
+  import LessonControls from '$lib/components/LessonControls.svelte';
+  import ConnectionStatus from '$lib/components/ConnectionStatus.svelte';
+  import ChatArea from '$lib/components/ChatArea.svelte';
+  import Controls from '$lib/components/Controls.svelte';
+  import DebugInfo from '$lib/components/DebugInfo.svelte';
 
   // Enhanced types for German learning
   interface Message {
@@ -35,8 +41,6 @@
   let currentTopic: string = 'Grüße und Vorstellungen';
   let userLevel: 'A1' | 'A2' | 'B1' = 'A1';
   let showTranslation: boolean = true;
-  let useVoice: boolean = true;
-  let apiAvailable: boolean = false;
 
   // Current lesson content
   let currentLesson: Lesson = {
@@ -88,21 +92,6 @@
     }
   }
 
-  async function getSecureToken(): Promise<string> {
-    try {
-      const response = await fetch('/api/voice-agent');
-      if (!response.ok) {
-        throw new Error(`Failed to get token: ${response.status}`);
-      }
-      const data = await response.json();
-      return data.token;
-    } catch (error) {
-      const err = error instanceof Error ? error : new Error('Unknown token error');
-      addMessage(`Failed to get secure token: ${err.message}`);
-      throw err;
-    }
-  }
-
   async function connect(): Promise<void> {
     if (!audioContext) {
       await initAudio();
@@ -112,22 +101,19 @@
       status = 'Connecting...';
       addMessage('Connecting to Voice Agent...');
 
-      // Get secure token from server instead of hardcoding
-      const token = await getSecureToken();
-
-      // Deepgram Voice Agent WebSocket connection
-      const wsUrl = `wss://api.deepgram.com/v1/listen/agent?token=${token}`;
+      // Connect to the backend WebSocket proxy
+      const wsUrl = `ws://${window.location.host}`;
       socket = new WebSocket(wsUrl);
 
       socket.onopen = () => {
         status = 'Connected';
         isConnected = true;
-        addMessage('WebSocket connected to Deepgram Voice Agent');
+        addMessage('WebSocket connected to backend proxy');
 
         // Send Settings as first message (per Deepgram docs)
         const settings = {
           type: 'Settings',
-          language: 'en-us',
+          language: 'de',
           model: 'aura-2-en',
           speak: {
             speed: 0.9,
@@ -139,8 +125,8 @@
           },
           think: {
             provider: {
-              type: 'open_ai',
-              model: 'gpt-4o-mini',
+              type: 'google',
+              model: 'gemini-1.5-flash',
               temperature: 0.7,
               max_tokens: 150
             },
@@ -155,24 +141,26 @@
       };
 
       socket.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
+        if (typeof event.data === 'string') {
+          try {
+            const data = JSON.parse(event.data);
 
-          if (data.type === 'transcription') {
-            const transcript = data.channel.alternatives[0]?.transcript;
-            if (transcript) {
-              addMessage(transcript, 'user');
+            if (data.type === 'transcription') {
+              const transcript = data.channel.alternatives[0]?.transcript;
+              if (transcript) {
+                addMessage(transcript, 'user');
+              }
+            } else if (data.type === 'speech' && data.speech) {
+              addMessage('AI is speaking...', 'ai');
+              playAudio(data.speech);
+            } else if (data.type === 'error') {
+              addMessage('Error: ' + data.message, 'system');
+            } else {
+              console.log('Unhandled message type:', data.type, data);
             }
-          } else if (data.type === 'speech' && data.speech) {
-            addMessage('AI is speaking...', 'ai');
-            console.log('Received AI speech:', data.speech); // Could play audio here
-          } else if (data.type === 'error') {
-            addMessage('Error: ' + data.message, 'system');
-          } else {
-            console.log('Unhandled message type:', data.type, data);
+          } catch (error) {
+            console.log('Raw message:', event.data);
           }
-        } catch (error) {
-          console.log('Raw message:', event.data);
         }
       };
 
@@ -201,72 +189,58 @@
       socket = null;
     }
     if (isRecording) {
-      stopRecording();
+      toggleRecording();
     }
     status = 'Disconnected';
     isConnected = false;
     addMessage('Disconnected from Voice Agent');
   }
 
-  function startRecording(): void {
-    if (!isConnected || !micStream) {
-      addMessage('Not connected or no microphone access');
-      return;
-    }
+  function toggleRecording(): void {
+    if (isRecording) {
+      if (recorder && recorder.state === 'recording') {
+        recorder.stop();
+        recorder = null;
+        isRecording = false;
+        addMessage('Stopped recording');
+      }
+    } else {
+      if (!isConnected || !micStream) {
+        addMessage('Not connected or no microphone access');
+        return;
+      }
 
-    try {
-      const mediaRecorder = new MediaRecorder(micStream, {
-        mimeType: 'audio/webm;codecs=opus'
-      });
+      try {
+        const mediaRecorder = new MediaRecorder(micStream);
 
-      const chunks: Blob[] = [];
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0 && socket && socket.readyState === WebSocket.OPEN) {
+            socket.send(event.data);
+          }
+        };
 
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          chunks.push(event.data);
-        }
-      };
+        mediaRecorder.start(500); // Send data every 500ms
+        recorder = mediaRecorder;
+        isRecording = true;
+        addMessage('Started recording - speak now...');
 
-      mediaRecorder.onstop = () => {
-        if (chunks.length > 0 && socket && socket.readyState === WebSocket.OPEN) {
-          // Combine chunks and send as ArrayBuffer
-          const blob = new Blob(chunks, { type: 'audio/webm' });
-          blob.arrayBuffer().then(buffer => {
-            if (socket && socket.readyState === WebSocket.OPEN) {
-              socket.send(buffer);
-              addMessage('Audio sent to Voice Agent');
-            }
-          });
-        }
-      };
-
-      // Start recording
-      mediaRecorder.start();
-      recorder = mediaRecorder;
-      isRecording = true;
-
-      addMessage('Started recording - speak now...');
-
-      // Stop after 5 seconds (for demo)
-      setTimeout(() => {
-        if (isRecording) {
-          stopRecording();
-        }
-      }, 5000);
-
-    } catch (error) {
-      const err = error instanceof Error ? error : new Error('Unknown recording error');
-      addMessage('Failed to start recording: ' + err.message);
+      } catch (error) {
+        const err = error instanceof Error ? error : new Error('Unknown recording error');
+        addMessage('Failed to start recording: ' + err.message);
+      }
     }
   }
 
-  function stopRecording(): void {
-    if (recorder && recorder.state === 'recording') {
-      recorder.stop();
-      recorder = null;
-      isRecording = false;
-      addMessage('Stopped recording');
-    }
+  function playAudio(audioData: string): void {
+    if (!audioContext) return;
+
+    const audioBuffer = Uint8Array.from(atob(audioData), c => c.charCodeAt(0));
+    audioContext.decodeAudioData(audioBuffer.buffer, (buffer) => {
+      const source = audioContext.createBufferSource();
+      source.buffer = buffer;
+      source.connect(audioContext.destination);
+      source.start(0);
+    });
   }
 
   onMount(async () => {
@@ -278,108 +252,13 @@
   });
 </script>
 
-<!-- 🇩🇪 German Language Learning App -->
 <main class="min-h-screen bg-slate-900 p-6">
   <div class="max-w-6xl mx-auto">
-
-    <!-- Header -->
-    <header class="text-center mb-8">
-      <h1 class="text-4xl font-bold text-white mb-2">🇩🇪 German Language Tutor</h1>
-      <h2 class="text-lg text-slate-300 mb-1">{currentLesson.title}</h2>
-      <p class="text-sm text-slate-400">Level: {userLevel} • Topic: {currentLesson.topic}</p>
-    </header>
-
-    <!-- Lesson Controls -->
-    <div class="flex flex-wrap gap-4 mb-6 justify-center">
-      <select bind:value={userLevel} class="bg-slate-800 text-white px-4 py-2 rounded-lg border border-slate-600">
-        <option value="A1">A1 - Beginner</option>
-        <option value="A2">A2 - Elementary</option>
-        <option value="B1">B1 - Intermediate</option>
-      </select>
-      <button class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
-        on:click={() => showTranslation = !showTranslation}>
-        🔤 {showTranslation ? 'Hide' : 'Show'} Translations
-      </button>
-    </div>
-
-    <!-- Connection Status -->
-    <div class="bg-slate-800 p-4 rounded-lg mb-6">
-      <div class="flex items-center justify-between">
-        <div class="flex items-center space-x-3">
-          <div class="w-3 h-3 rounded-full {status === 'Connected' ? 'bg-green-400' :
-           status === 'Connecting...' ? 'bg-orange-400' : 'bg-red-400'}"></div>
-          <span class="text-white font-medium">Status: {status}</span>
-        </div>
-        <button
-          on:click={toggleConnection}
-          class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-        >
-          {isConnected ? 'Disconnect' : 'Connect'}
-        </button>
-      </div>
-    </div>
-
-    <!-- Chat Area -->
-    <div class="bg-slate-800 rounded-lg p-4 mb-6 h-96 overflow-y-auto">
-      <h3 class="text-white font-semibold mb-4">Conversation</h3>
-      <div id="messages" class="space-y-3">
-        {#each messages as msg}
-          <div class="flex {msg.type === 'user' ? 'justify-end' : 'justify-start'}">
-            <div class="max-w-sm px-4 py-2 rounded-lg {msg.type === 'user' ? 'bg-blue-600 text-white' : 'bg-slate-700 text-white'}">
-              <div class="text-sm">{msg.text}</div>
-              <div class="text-xs opacity-70 mt-1">{new Date(msg.timestamp).toLocaleTimeString()}</div>
-            </div>
-          </div>
-        {/each}
-        {#if isRecording}
-          <div class="flex justify-center">
-            <div class="px-4 py-2 rounded-lg bg-slate-700 text-white flex items-center">
-              <div class="flex space-x-1 mr-3">
-                <div class="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
-                <div class="w-2 h-2 bg-blue-400 rounded-full animate-pulse animation-delay-200"></div>
-                <div class="w-2 h-2 bg-blue-400 rounded-full animate-pulse animation-delay-400"></div>
-              </div>
-              <span class="text-sm">Recording...</span>
-            </div>
-          </div>
-        {/if}
-      </div>
-    </div>
-
-    <!-- Controls -->
-    <div class="flex space-x-4">
-      <button
-        on:click={startRecording}
-        disabled={!isConnected || isRecording}
-        class="flex-1 py-3 px-6 bg-green-600 hover:bg-green-700 disabled:bg-slate-600 text-white rounded-lg transition-colors"
-      >
-        🎤 Speak
-      </button>
-
-      <button
-        on:click={stopRecording}
-        disabled={!isRecording}
-        class="flex-1 py-3 px-6 bg-red-600 hover:bg-red-700 disabled:bg-slate-600 text-white rounded-lg transition-colors"
-      >
-        ⏹️ Stop
-      </button>
-    </div>
-
-    <!-- Debug Info -->
-    <div class="mt-8 bg-slate-800 p-4 rounded-lg">
-      <h4 class="text-white font-semibold mb-3">Debug Info</h4>
-      <div class="text-slate-400 text-sm space-y-1">
-        <div>WebSocket URL: wss://api.deepgram.com/v1/listen/agent?token=***</div>
-        <div>Audio Context: {audioContext ? 'Available' : 'Not initialized'}</div>
-        <div>Microphone: {micStream ? 'Available' : 'Not requested'}</div>
-        <div>Messages: {messages.length}</div>
-      </div>
-    </div>
-
+    <Header title={currentLesson.title} userLevel={userLevel} topic={currentLesson.topic} />
+    <LessonControls bind:userLevel={userLevel} bind:showTranslation={showTranslation} on:toggleTranslation={() => showTranslation = !showTranslation} />
+    <ConnectionStatus status={status} isConnected={isConnected} on:toggleConnection={toggleConnection} />
+    <ChatArea messages={messages} isRecording={isRecording} />
+    <Controls isConnected={isConnected} isRecording={isRecording} on:toggleRecording={toggleRecording} />
+    <DebugInfo audioContext={audioContext} micStream={micStream} messages={messages} />
   </div>
 </main>
-
-<style>
-  .animation-delay-200 { animation-delay: 0.2s; }
-  .animation-delay-400 { animation-delay: 0.4s; }
-</style>
