@@ -2,6 +2,7 @@
   export let messages: { text: string; type: string; timestamp: Date }[];
   export let isRecording: boolean;
   export let isAiThinking: boolean;
+  export let interimTranscript: string;
 </script>
 
 <div class="bg-slate-800 rounded-lg p-4 mb-6 h-96 overflow-y-auto">
@@ -26,6 +27,13 @@
           <span class="text-sm">Recording...</span>
         </div>
       </div>
+    {/if}
+    {#if interimTranscript}
+        <div class="flex justify-end">
+            <div class="max-w-sm px-4 py-2 rounded-lg bg-blue-600 text-white opacity-70">
+            <div class="text-sm">{interimTranscript}</div>
+            </div>
+        </div>
     {/if}
     {#if isAiThinking}
       <div class="flex justify-center">

@@ -8,6 +8,7 @@
   import ChatArea from '$lib/components/ChatArea.svelte';
   import Controls from '$lib/components/Controls.svelte';
   import DebugInfo from '$lib/components/DebugInfo.svelte';
+  import Collapsible from '$lib/components/Collapsible.svelte';
   import { lessons } from '$lib/lessons';
   import type { Lesson } from '$lib/lessons';
 
@@ -39,6 +40,7 @@
   let recorder: MediaRecorder | null = null;
   let isRecording: boolean = false;
   let isAiThinking: boolean = false;
+  let interimTranscript: string = '';
 
   // Learning state
   let currentTopic: string = 'Grüße und Vorstellungen';
@@ -156,8 +158,13 @@
             if (data.type === 'transcription') {
               const transcript = data.channel.alternatives[0]?.transcript;
               if (transcript) {
-                addMessage(transcript, 'user');
-                isAiThinking = true;
+                if (data.is_final) {
+                  addMessage(transcript, 'user');
+                  interimTranscript = '';
+                  isAiThinking = true;
+                } else {
+                  interimTranscript = transcript;
+                }
               }
             } else if (data.type === 'speech' && data.speech) {
               isAiThinking = false;
@@ -269,10 +276,14 @@
     <button on:click={handleLogout} class="absolute top-4 right-4 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors">
       Logout
     </button>
-    <LessonControls bind:userLevel={userLevel} bind:showTranslation={showTranslation} on:toggleTranslation={() => showTranslation = !showTranslation} lessons={lessons} currentLesson={currentLesson} on:setLesson={handleLessonChange} />
-    <ConnectionStatus status={status} isConnected={isConnected} on:toggleConnection={toggleConnection} />
-    <ChatArea messages={messages} isRecording={isRecording} isAiThinking={isAiThinking} />
+    <Collapsible title="Lesson Controls">
+      <LessonControls bind:userLevel={userLevel} bind:showTranslation={showTranslation} on:toggleTranslation={() => showTranslation = !showTranslation} lessons={lessons} currentLesson={currentLesson} on:setLesson={handleLessonChange} />
+    </Collapsible>
+    <ConnectionStatus status={status} isConnected={isConnected} on:toggleConnection={toggleConnection} isAiThinking={isAiThinking} isRecording={isRecording} />
+    <ChatArea messages={messages} isRecording={isRecording} isAiThinking={isAiThinking} interimTranscript={interimTranscript} />
     <Controls isConnected={isConnected} isRecording={isRecording} on:toggleRecording={toggleRecording} />
-    <DebugInfo audioContext={audioContext} micStream={micStream} messages={messages} />
+    <Collapsible title="Debug Info">
+      <DebugInfo audioContext={audioContext} micStream={micStream} messages={messages} />
+    </Collapsible>
   </div>
 </main>

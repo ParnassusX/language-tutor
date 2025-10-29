@@ -38,13 +38,15 @@ describe('Language Tutor Page', () => {
     cleanup();
   });
 
-  it('renders the main page with all expected elements', () => {
+  it('renders the main page with all expected elements', async () => {
     render(Page);
     expect(screen.getByRole('heading', { name: /german language tutor/i })).toBeInTheDocument();
     expect(screen.getByTestId('connect-button')).toBeInTheDocument();
+    await fireEvent.click(screen.getByText('► Lesson Controls'));
     expect(screen.getByTestId('translation-button')).toBeInTheDocument();
     expect(screen.getByText('Conversation')).toBeInTheDocument();
     expect(screen.getByTestId('record-button')).toBeInTheDocument();
+    await fireEvent.click(screen.getByText('► Debug Info'));
     expect(screen.getByText('Debug Info')).toBeInTheDocument();
   });
 

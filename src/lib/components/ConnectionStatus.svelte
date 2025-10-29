@@ -3,8 +3,12 @@
 
   export let status: string;
   export let isConnected: boolean;
+  export let isAiThinking: boolean;
+  export let isRecording: boolean;
 
   const dispatch = createEventDispatcher();
+
+  $: statusMessage = isAiThinking ? 'AI is thinking...' : isRecording ? 'Listening...' : status;
 </script>
 
 <div class="bg-slate-800 p-4 rounded-lg mb-6">
@@ -12,7 +16,7 @@
     <div class="flex items-center space-x-3">
       <div class="w-3 h-3 rounded-full {status === 'Connected' ? 'bg-green-400' :
        status === 'Connecting...' ? 'bg-orange-400' : 'bg-red-400'}"></div>
-      <span class="text-white font-medium" data-testid="status-message">Status: {status}</span>
+      <span class="text-white font-medium" data-testid="status-message">Status: {statusMessage}</span>
     </div>
     <button
       on:click={() => dispatch('toggleConnection')}
