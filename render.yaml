@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: language-tutor
+    env: node
+    plan: free
+    buildCommand: "npm install && npm run build"
+    startCommand: "node build/index.js"
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        value: file:/app/prisma/dev.db
+    disks:
+      - name: sqlite-data
+        mountPath: /app/prisma
+        sizeGB: 1
