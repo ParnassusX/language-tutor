@@ -16,5 +16,11 @@ export default defineConfig({
 	],
 	define: {
 		global: 'globalThis'
+	},
+	// Explicitly configure build options to handle problematic CJS dependencies
+	build: {
+		commonjsOptions: {
+			transformMixedEsModules: true,
+		}
 	}
 });
