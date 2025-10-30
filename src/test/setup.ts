@@ -32,14 +32,13 @@ export class MockWebSocket {
     return this._instances;
   }
   
-  static messageCallback: ((event: { data: string }) => void) | null = null;
-  
   onopen: (() => void) | null = null;
   onmessage: ((event: { data: string }) => void) | null = null;
   onclose: (() => void) | null = null;
   onerror: ((event: Event) => void) | null = null;
   readyState = 0; // CONNECTING
   sentData: any[] = [];
+  close = vi.fn();
 
   // Method to trigger successful connection (for testing)
   triggerOpen() {
@@ -64,35 +63,22 @@ export class MockWebSocket {
     }
   }
 
+  // Method to trigger message (for testing)
+  triggerMessage(data: string) {
+    if (this.onmessage) {
+      this.onmessage({ data });
+    }
+  }
+
   constructor(public url: string) {
     MockWebSocket._instances.push(this);
-    // Don't automatically trigger open - let tests control this
   }
 
   send(data: any) {
     this.sentData.push(data);
-    
-    // Simulate response for testing
-    if (this.onmessage) {
-      const response = {
-        type: 'transcript',
-        channel: {
-          alternatives: [{
-            transcript: 'Hallo, wie geht es dir?',
-            confidence: 0.95
-          }]
-        }
-      };
-      this.onmessage({ data: JSON.stringify(response) } as MessageEvent);
-    }
   }
 
-  close() {
-    this.readyState = 3; // CLOSED
-    if (this.onclose) this.onclose();
-  }
-
-  static clear() {
+  static clearInstances() {
     MockWebSocket._instances = [];
   }
 }
@@ -109,11 +95,6 @@ export const mockMediaDevices = () => {
     writable: true,
     value: {
       getUserMedia: vi.fn(() => Promise.resolve(new MediaStream())),
-      enumerateDevices: vi.fn(() =>
-        Promise.resolve([
-          { kind: 'audioinput', deviceId: 'mic1', label: 'Microphone' }
-        ])
-      )
     }
   });
 };
@@ -121,29 +102,17 @@ export const mockMediaDevices = () => {
 // Mock AudioContext
 Object.defineProperty(window, 'AudioContext', {
   writable: true,
-  value: class {
-    createAnalyser() {
-      return {
-        fftSize: 2048,
-        frequencyBinCount: 1024,
-        getByteFrequencyData: vi.fn(),
-        getByteTimeDomainData: vi.fn()
-      };
-    }
-    createMediaStreamSource() {
-      return {
-        connect: vi.fn(),
-        disconnect: vi.fn()
-      };
-    }
-    createScriptProcessor() {
-      return {
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        onaudioprocess: null
-      };
-    }
-  }
+  value: vi.fn().mockImplementation(() => ({
+    decodeAudioData: vi.fn((_, success) => success(new ArrayBuffer(8))),
+    createBufferSource: vi.fn(() => ({
+      connect: vi.fn(),
+      start: vi.fn(),
+      buffer: null,
+    })),
+    resume: vi.fn(),
+    state: 'running',
+    destination: 'mock-destination',
+  })),
 });
 
 // Mock MediaRecorder
@@ -163,12 +132,6 @@ Object.defineProperty(window, 'MediaRecorder', {
     stop() {
       this.state = 'inactive';
     }
-    
-    requestData() {
-      if (this.ondataavailable) {
-        this.ondataavailable({ data: new Blob(['test'], { type: 'audio/wav' }) });
-      }
-    }
   }
 });
 
@@ -178,23 +141,8 @@ Object.defineProperty(window, 'MediaStream', {
   value: class MediaStream {}
 });
 
-// Mock navigator.mediaDevices
-Object.defineProperty(navigator, 'mediaDevices', {
-  writable: true,
-  value: {
-    getUserMedia: vi.fn(() =>
-      Promise.resolve(new MediaStream())
-    ),
-    enumerateDevices: vi.fn(() =>
-      Promise.resolve([
-        { kind: 'audioinput', deviceId: 'mic1', label: 'Microphone' }
-      ])
-    )
-  }
-});
-
 // Cleanup after each test
 afterEach(() => {
   vi.clearAllMocks();
-  MockWebSocket.clear();
+  MockWebSocket.clearInstances();
 });
