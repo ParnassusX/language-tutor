@@ -11,7 +11,7 @@ export const handle: Handle = async ({ event, resolve }) => {
     }
   }
 
-  if (event.url.pathname !== '/login' && event.url.pathname !== '/signup' && !event.locals.user) {
+  if (event.url.pathname.startsWith('/tutor') && !event.locals.user) {
     return new Response(null, {
       status: 302,
       headers: {
