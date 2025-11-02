@@ -53,6 +53,7 @@
 		"@google/generative-ai": "^0.24.1",
 		"@prisma/client": "^6.18.0",
 		"bcrypt": "^6.0.0",
+		"daisyui": "^5.4.2",
 		"dotenv": "^17.2.3",
 		"jsonwebtoken": "^9.0.2",
 		"uuid": "^13.0.0"
