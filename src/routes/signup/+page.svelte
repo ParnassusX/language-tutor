@@ -13,7 +13,7 @@
     });
 
     if (response.ok) {
-      window.location.href = '/';
+      window.location.href = '/tutor';
     } else {
       error = 'Username already taken';
     }
