@@ -3,7 +3,7 @@ services:
     name: language-tutor
     env: node
     plan: free
-    buildCommand: "npm install && npm run build"
+    buildCommand: "npm install && npx prisma db push && npm run build"
     startCommand: "node build/index.js"
     healthCheckPath: /api/health
     envVars:
