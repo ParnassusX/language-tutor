@@ -43,8 +43,8 @@ export async function generateLiveKitToken(
  * Create a LiveKit room for a lesson
  */
 export async function createLessonRoom(
-  lessonId: string,
   userId: string,
+  lessonId: string,
   options?: {
     maxParticipants?: number;
     emptyTimeout?: number;
@@ -69,7 +69,13 @@ export async function createLessonRoom(
     
     console.log(`✅ Created LiveKit room: ${roomName}`);
   } catch (error) {
-    console.log(`Room ${roomName} may already exist, proceeding...`);
+    // Room might already exist, which is fine for our use case
+    if (error instanceof Error && error.message.includes('already exists')) {
+      console.log(`Room ${roomName} already exists, reusing...`);
+    } else {
+      console.error('Error creating LiveKit room:', error);
+      throw error;
+    }
   }
   
   // Generate token for user
@@ -179,9 +185,14 @@ export interface DeepgramLiveKitBridge {
 }
 
 export function createDeepgramBridge(roomName: string): DeepgramLiveKitBridge {
+  const apiKey = env.DEEPGRAM_API_KEY;
+  if (!apiKey) {
+    throw new Error('DEEPGRAM_API_KEY is required for voice features');
+  }
+  
   return {
     roomName,
-    deepgramApiKey: env.DEEPGRAM_API_KEY || '',
+    deepgramApiKey: apiKey,
     model: 'nova-2', // Latest Deepgram model (free tier)
     language: 'de',
   };

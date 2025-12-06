@@ -24,25 +24,21 @@ interface AgentState {
 }
 
 /**
- * Initialize the LLM (using free Gemini tier by default, OpenAI as fallback)
+ * Initialize the LLM (using OpenAI by default, with proper config)
+ * Note: For Gemini, use @langchain/google-genai instead
  */
 function initializeLLM() {
-  // Prefer free Gemini tier for cost-effectiveness
-  if (env.GEMINI_API_KEY) {
-    // Note: Using ChatOpenAI with base_url for Gemini compatibility
-    return new ChatOpenAI({
-      modelName: 'gemini-1.5-flash',
-      temperature: 0.7,
-      maxTokens: 200,
-    });
-  } else if (env.OPENAI_API_KEY) {
+  // Use OpenAI (supports both OpenAI and compatible APIs)
+  if (env.OPENAI_API_KEY) {
     return new ChatOpenAI({
       modelName: 'gpt-4-turbo-preview',
       temperature: 0.7,
       maxTokens: 200,
     });
   }
-  throw new Error('No AI provider configured. Set GEMINI_API_KEY (free tier) or OPENAI_API_KEY');
+  // TODO: Add proper Gemini support via @langchain/google-genai
+  // For now, require OpenAI for LangGraph agent
+  throw new Error('OPENAI_API_KEY is required for LangGraph agent. Set it in your .env file.');
 }
 
 /**
@@ -367,10 +363,12 @@ export async function executeLanguageTutorAgent(
   
   // Save messages to database
   try {
-    // Create conversation if needed
+    // Create conversation if needed (use upsert to handle existing conversations)
     if (!conversationId) {
-      await prisma.conversation.create({
-        data: {
+      await prisma.conversation.upsert({
+        where: { id: convId },
+        update: {},
+        create: {
           id: convId,
           userId,
           lessonId,
@@ -378,10 +376,15 @@ export async function executeLanguageTutorAgent(
       });
     }
     
+    // Generate unique message IDs
+    const timestamp = Date.now();
+    const userMsgId = `msg_${timestamp}_${Math.random().toString(36).substr(2, 9)}`;
+    const aiMsgId = `msg_${timestamp + 1}_${Math.random().toString(36).substr(2, 9)}`;
+    
     // Save user message
     await prisma.conversationMessage.create({
       data: {
-        id: `msg_${Date.now()}_1`,
+        id: userMsgId,
         conversationId: convId,
         role: 'user',
         content: userMessage,
@@ -391,7 +394,7 @@ export async function executeLanguageTutorAgent(
     // Save AI response
     await prisma.conversationMessage.create({
       data: {
-        id: `msg_${Date.now()}_2`,
+        id: aiMsgId,
         conversationId: convId,
         role: 'ai',
         content: response,
@@ -400,6 +403,7 @@ export async function executeLanguageTutorAgent(
     });
   } catch (error) {
     console.error('Error saving conversation:', error);
+    // Don't throw - conversation saving is not critical for the response
   }
   
   return {
