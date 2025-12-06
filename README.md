@@ -1,15 +1,22 @@
-# 🚀 German Language Tutor - AI-Powered Learning Platform
+# 🚀 German Language Tutor - Agentic AI Platform
 
-> **Modern AI-Powered Platform:** Smart German language learning with RAG, streaming AI, and comprehensive progress tracking (December 2025)
+> **December 2025 Cutting-Edge:** LangGraph agentic workflows, LiveKit zero-latency voice, free tier optimized (Gemini + Deepgram + LiveKit)
 
 ## ✨ Latest Features (Dec 2025)
 
-**🧠 Smart AI Tutor:**
-- ✅ **RAG (Retrieval-Augmented Generation)** - Context-aware responses using semantic search
-- ✅ **Real-time streaming AI** - Progressive text generation with Vercel AI SDK
-- ✅ **Multi-provider support** - OpenAI GPT-4 or Google Gemini
-- ✅ **Vector embeddings** - 1536-dim semantic search for knowledge retrieval
-- ✅ **Conversation history** - Full persistence with context injection
+**🤖 LangGraph Agentic AI:**
+- ✅ **Stateful workflows** - Multi-step reasoning with conversation state
+- ✅ **Intelligent routing** - Auto-determines action (respond/correct/explain/quiz)
+- ✅ **RAG integration** - Context-aware responses using semantic search
+- ✅ **Multi-provider support** - Gemini FREE TIER (default) or OpenAI GPT-4
+- ✅ **Dynamic decision-making** - Real agentic behavior, not just chat
+
+**🎙️ LiveKit Zero-Latency Voice:**
+- ✅ **Sub-100ms latency** - WebRTC-based real-time voice communication
+- ✅ **FREE TIER** - 10,000 participant minutes/month
+- ✅ **Deepgram integration** - FREE tier STT/TTS ($200 credit = 45 hours)
+- ✅ **High quality audio** - 48kHz with echo cancellation & noise suppression
+- ✅ **Scalable rooms** - Thousands of concurrent voice sessions
 
 **📊 Progress Tracking:**
 - ✅ **Lesson management** - Database-stored lessons with metadata
@@ -34,8 +41,10 @@
 
 ### Prerequisites
 - Node.js 20+ and npm 9+
-- OpenAI API key (for embeddings + chat) OR Gemini API key
-- Deepgram API key (for voice features)
+- **Gemini API key** (FREE TIER - 1500 req/day) - **Recommended**
+- **Deepgram API key** (FREE TIER - $200 credit) - **Recommended**
+- **LiveKit account** (FREE TIER - 10K minutes/month) - **Recommended**
+- OpenAI API key (optional, for embeddings)
 
 ### Installation
 
@@ -71,13 +80,21 @@ npm run dev
 
 ## 🏗️ Architecture
 
-### Tech Stack
+### Tech Stack (December 2025)
 - **Framework:** SvelteKit (v1.20+)
+- **Agentic AI:** LangGraph (stateful workflows)
+- **Voice:** LiveKit (zero-latency WebRTC) + Deepgram (STT/TTS)
+- **LLM:** Google Gemini FREE TIER (default) / OpenAI GPT-4 (fallback)
 - **Database:** Prisma + SQLite (production: PostgreSQL ready)
-- **AI/ML:** Vercel AI SDK, OpenAI, Google Gemini
-- **Voice:** Deepgram Aura 2
+- **RAG:** OpenAI embeddings + vector search
 - **Auth:** JWT with bcrypt
 - **Styling:** TailwindCSS + DaisyUI
+
+### Free Tier Stack (Recommended)
+- **Gemini**: 1,500 requests/day = $0/month
+- **Deepgram**: $200 credit = ~45 hours audio
+- **LiveKit**: 10,000 participant minutes/month = $0/month
+- **Total Monthly Cost**: $0 for small-medium deployments! 💰
 
 ### Key Components
 ```
