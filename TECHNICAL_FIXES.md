@@ -35,9 +35,9 @@ export { prisma };
 
 **Update: `src/lib/server/auth.ts`**
 ```typescript
-// Change line 8 from:
+// Remove the PrismaClient instantiation:
 // const prisma = new PrismaClient();
-// To:
+// Replace with import:
 import { prisma } from './db';
 ```
 
@@ -119,11 +119,29 @@ export const POST = async ({ request }) => {
     });
   }
 
-  // Return temporary token for client
+  // IMPORTANT: For production, generate a scoped temporary token via Deepgram API
+  // See: https://developers.deepgram.com/docs/authenticating#create-a-temporary-token
+  // For MVP/development, using the API key directly is acceptable but NOT recommended for production
+  
+  // Production implementation should use Deepgram's Key Management API:
+  // const response = await fetch('https://api.deepgram.com/v1/keys', {
+  //   method: 'POST',
+  //   headers: {
+  //     'Authorization': `Token ${DEEPGRAM_API_KEY}`,
+  //     'Content-Type': 'application/json'
+  //   },
+  //   body: JSON.stringify({
+  //     scopes: ['usage:write'],
+  //     time_to_live_in_seconds: 3600
+  //   })
+  // });
+  // const { key } = await response.json();
+  
   return new Response(JSON.stringify({
-    token: DEEPGRAM_API_KEY, // Or generate scoped token with Deepgram API
+    token: DEEPGRAM_API_KEY, // TODO: Replace with scoped token for production
     wsUrl: 'wss://api.deepgram.com/v1/listen',
-    expiresIn: 3600
+    expiresIn: 3600,
+    warning: 'Using full API key - implement scoped tokens for production'
   }), {
     headers: { 'Content-Type': 'application/json' }
   });
