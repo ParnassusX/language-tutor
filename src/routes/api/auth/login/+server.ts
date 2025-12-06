@@ -1,8 +1,6 @@
 import { verifyPassword, createSession, createSessionCookie } from '$lib/server/auth';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '$lib/server/db';
 import type { RequestHandler } from '@sveltejs/kit';
-
-const prisma = new PrismaClient();
 
 export const POST: RequestHandler = async ({ request }) => {
   const { username, password } = await request.json();

@@ -1,12 +1,18 @@
-import { PrismaClient } from '@prisma/client';
 import jwt from 'jsonwebtoken';
 const { sign, verify } = jwt;
 import { hash, compare } from 'bcrypt';
 import { env } from '$env/dynamic/private';
 import { v4 as uuidv4 } from 'uuid';
+import { prisma } from './db';
 
-const prisma = new PrismaClient();
-const JWT_SECRET = env.JWT_SECRET || 'secret';
+// Get JWT_SECRET - will be validated at runtime when used
+function getJWTSecret(): string {
+  const secret = env.JWT_SECRET;
+  if (!secret) {
+    throw new Error('JWT_SECRET environment variable is required. Generate one with: openssl rand -base64 32');
+  }
+  return secret;
+}
 
 export async function hashPassword(password: string) {
   return await hash(password, 10);
@@ -40,13 +46,13 @@ export async function createSession(userId: string) {
 }
 
 export function createSessionCookie(sessionId: string) {
-  const token = sign({ sessionId }, JWT_SECRET, { expiresIn: '7d' });
+  const token = sign({ sessionId }, getJWTSecret(), { expiresIn: '7d' });
   return `session=${token}; HttpOnly; Path=/; Max-Age=604800`;
 }
 
 export async function verifySession(token: string) {
   try {
-    const { sessionId } = verify(token, JWT_SECRET) as { sessionId: string };
+    const { sessionId } = verify(token, getJWTSecret()) as { sessionId: string };
     const session = await prisma.session.findUnique({
       where: { id: sessionId },
       include: { user: true },

@@ -11,10 +11,15 @@ datasource db {
 }
 
 model User {
-  id       String @id @unique
-  username String @unique
-  password String
-  sessions Session[]
+  id              String            @id @unique
+  username        String            @unique
+  password        String
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  sessions        Session[]
+  progress        LessonProgress[]
+  conversations   Conversation[]
+  vocabularyItems VocabularyItem[]
 }
 
 model Session {
@@ -22,4 +27,84 @@ model Session {
   expiresAt DateTime
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Lesson {
+  id          String           @id @unique
+  title       String
+  topic       String
+  level       String           // A1, A2, B1, B2, C1, C2
+  description String?
+  vocabulary  String           // JSON array of vocabulary words
+  phrases     String           // JSON array of phrases
+  grammar     String?          // JSON with grammar rules
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  progress    LessonProgress[]
+}
+
+model LessonProgress {
+  id              String   @id @unique
+  userId          String
+  lessonId        String
+  completed       Boolean  @default(false)
+  score           Int?     // 0-100
+  practiceCount   Int      @default(0)
+  lastPracticedAt DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson          Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, lessonId])
+}
+
+model Conversation {
+  id        String            @id @unique
+  userId    String
+  lessonId  String?
+  startedAt DateTime          @default(now())
+  endedAt   DateTime?
+  messages  ConversationMessage[]
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ConversationMessage {
+  id             String       @id @unique
+  conversationId String
+  role           String       // 'user' or 'ai'
+  content        String
+  translation    String?
+  timestamp      DateTime     @default(now())
+  metadata       String?      // JSON: { confidence, corrections, etc }
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+}
+
+model VocabularyItem {
+  id          String   @id @unique
+  userId      String
+  word        String
+  translation String
+  context     String?  // Example sentence
+  mastery     Int      @default(0) // 0-100
+  lastReviewed DateTime @default(now())
+  reviewCount Int      @default(0)
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, word])
+}
+
+model KnowledgeBase {
+  id          String   @id @unique
+  category    String   // 'grammar', 'vocabulary', 'culture', 'pronunciation'
+  title       String
+  content     String   // Markdown content
+  level       String   // A1-C2
+  tags        String   // JSON array of tags
+  embedding   String?  // JSON array of embedding vector (for semantic search)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([category, level])
 }
