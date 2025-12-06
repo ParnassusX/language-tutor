@@ -235,9 +235,23 @@ npx prisma generate
 
 ## 🌱 Seeding the Knowledge Base
 
-**Initial Content**:
+**Development (using tsx)**:
 ```bash
-npm run seed-kb
+npm run db:seed
+```
+
+**Production (without dev dependencies)**:
+```bash
+# Option 1: Build and run the seed script
+npx tsx scripts/seed-knowledge-base.ts
+
+# Option 2: Import and call in your app
+import { seedKnowledgeBase } from './src/lib/server/rag';
+await seedKnowledgeBase();
+
+# Option 3: Use Prisma seed in package.json
+# Add to package.json: "prisma": { "seed": "tsx scripts/seed-knowledge-base.ts" }
+# Then run: npx prisma db seed
 ```
 
 This populates the knowledge base with:
@@ -247,7 +261,7 @@ This populates the knowledge base with:
 - Cultural insights (formal vs informal, etiquette)
 - Example sentences and usage patterns
 
-**Add More Content**:
+**Add More Content Programmatically**:
 ```typescript
 import { addKnowledgeBase } from '$lib/server/rag';
 
@@ -259,6 +273,8 @@ await addKnowledgeBase({
   tags: ['grammar', 'cases', 'nominative']
 });
 ```
+
+**Note**: For production, consider moving `tsx` to dependencies or using a compiled seed script.
 
 ---
 

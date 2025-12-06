@@ -25,6 +25,9 @@
 		"db:seed": "tsx scripts/seed-knowledge-base.ts",
 		"db:reset": "prisma migrate reset --force"
 	},
+	"prisma": {
+		"seed": "tsx scripts/seed-knowledge-base.ts"
+	},
 	"devDependencies": {
 		"@sveltejs/adapter-node": "^1.0.0",
 		"@sveltejs/kit": "^1.20.4",
