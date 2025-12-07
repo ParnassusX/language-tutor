@@ -220,10 +220,11 @@ export class RealTimeVoiceSession {
         },
       });
       
-      // Save message
+      // Save message with crypto-secure ID
+      const messageId = `msg_${Date.now()}_${crypto.randomUUID().substring(0, 12)}`;
       await prisma.conversationMessage.create({
         data: {
-          id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          id: messageId,
           conversationId: this.conversationId,
           role,
           content,
@@ -242,18 +243,31 @@ export class RealTimeVoiceSession {
   async stop(): Promise<void> {
     console.log('🛑 Stopping voice session...');
     
+    if (!this.isActive) {
+      console.log('Session already stopped');
+      return;
+    }
+    
     this.isActive = false;
     
     // Close STT
     if (this.sttConnection) {
-      this.sttConnection.finish();
+      try {
+        this.sttConnection.finish();
+      } catch (error) {
+        console.error('Error closing STT:', error);
+      }
       this.sttConnection = null;
     }
     
     // Close TTS
     if (this.ttsSession) {
-      await this.ttsSession.finish();
-      this.ttsSession.close();
+      try {
+        await this.ttsSession.finish();
+        this.ttsSession.close();
+      } catch (error) {
+        console.error('Error closing TTS:', error);
+      }
       this.ttsSession = null;
     }
     
