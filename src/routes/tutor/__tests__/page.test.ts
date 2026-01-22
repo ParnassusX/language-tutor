@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, screen, waitFor, cleanup } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import Page from '../+page.svelte';
-import { MockWebSocket } from '../../test/setup';
+import { MockWebSocket } from '../../../test/setup';
 
 describe('Language Tutor Page', () => {
   beforeEach(() => {
