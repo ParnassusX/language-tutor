@@ -13,7 +13,7 @@
 		"build": "DATABASE_URL=\"file:./dev.db\" prisma generate && vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
-		"start": "node build/index.js",
+		"start": "node prod-server.js",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"test": "vitest run",
@@ -55,6 +55,7 @@
 		"bcrypt": "^6.0.0",
 		"daisyui": "^5.4.2",
 		"dotenv": "^17.2.3",
+		"express": "^5.2.1",
 		"jsonwebtoken": "^9.0.2",
 		"uuid": "^13.0.0"
 	}
