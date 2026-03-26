@@ -8,6 +8,10 @@ import { v4 as uuidv4 } from 'uuid';
 const prisma = new PrismaClient();
 const JWT_SECRET = env.JWT_SECRET || 'secret';
 
+if (process.env.NODE_ENV === 'production' && JWT_SECRET === 'secret') {
+  console.warn('⚠️ WARNING: JWT_SECRET is set to default "secret" in production! Please set a secure JWT_SECRET.');
+}
+
 export async function hashPassword(password: string) {
   return await hash(password, 10);
 }
@@ -41,7 +45,8 @@ export async function createSession(userId: string) {
 
 export function createSessionCookie(sessionId: string) {
   const token = sign({ sessionId }, JWT_SECRET, { expiresIn: '7d' });
-  return `session=${token}; HttpOnly; Path=/; Max-Age=604800`;
+  const isProd = process.env.NODE_ENV === 'production';
+  return `session=${token}; HttpOnly; Path=/; Max-Age=604800${isProd ? '; Secure; SameSite=Lax' : ''}`;
 }
 
 export async function verifySession(token: string) {
